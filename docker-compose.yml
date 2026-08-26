@@ -1,0 +1,15 @@
+services:
+  discord-agent:
+    build: .
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      - agent-data:/app/data
+    # Read-only filesystem except for the data volume is optional but safer.
+    # read_only: true
+    # tmpfs:
+    #   - /tmp
+
+volumes:
+  agent-data:
