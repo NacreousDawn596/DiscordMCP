@@ -130,6 +130,7 @@ Discord ── message/mention/interaction ──► Discord Agent
 
 See [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md), [docs/CONFIGURATION.md](./docs/CONFIGURATION.md),
 [docs/SECURITY.md](./docs/SECURITY.md), and [docs/DEPLOYMENT.md](./docs/DEPLOYMENT.md) for details.
+For ready-to-use example prompts and provider configs, see [examples/](./examples).
 
 ## Testing
 
