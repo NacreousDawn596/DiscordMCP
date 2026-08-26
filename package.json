@@ -1,0 +1,36 @@
+{
+  "name": "discord-agent",
+  "version": "1.0.0",
+  "description": "An autonomous AI agent that lives inside Discord. Multi-guild, LLM-agnostic, tool-using, and safety-gated.",
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "cli": "tsx src/cli/cli.ts",
+    "doctor": "tsx src/cli/cli.ts doctor"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.8.1",
+    "croner": "^8.1.2",
+    "discord.js": "^14.16.3",
+    "dotenv": "^16.4.7",
+    "pino": "^9.6.0",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/node": "^22.10.5",
+    "pino-pretty": "^13.0.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3",
+    "vitest": "^4.1.11"
+  }
+}
