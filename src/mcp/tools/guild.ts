@@ -1,7 +1,7 @@
 import { ChannelType } from 'discord.js';
 import type { ToolDescriptor } from '../types.js';
 import { registerTool } from '../registry.js';
-import { ok, fail } from './helpers.js';
+import { ok, fail, clampInt } from './helpers.js';
 import { formatGuild, formatRoles, formatChannelSummary } from './format.js';
 
 export function registerGuildTools(): void {
@@ -139,6 +139,59 @@ export function registerGuildTools(): void {
         .first(limit)
         .map((m) => `- ${m.user.tag} (${m.id})${m.nickname ? ` aka ${m.nickname}` : ''}`);
       return ok(members.length ? members.join('\n') : 'No members cached.');
+    },
+  });
+
+  registerTool({
+    name: 'discord.guild.members',
+    description:
+      'List all members in the server with detailed info: id, username, tag, display name, bot flag, joined date, and role names. Fetches uncached members from Discord.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        fetch_all: { type: 'boolean', description: 'Fetch all members from Discord (default true).' },
+        include_bots: { type: 'boolean', description: 'Include bot members (default true).' },
+        limit: { type: 'integer', description: 'Max members to return (default 200, max 1000).' },
+      },
+      required: [],
+    },
+    risk: 'READ',
+    mutates: false,
+    async execute(ctx, args) {
+      const fetchAll = args.fetch_all !== false;
+      const includeBots = args.include_bots !== false;
+      const limit = clampInt(args.limit, 1, 1000, 200);
+
+      let members;
+      if (fetchAll) {
+        members = await ctx.guild.members.fetch();
+      } else {
+        members = ctx.guild.members.cache;
+      }
+
+      const rows = [...members.values()]
+        .filter((m) => includeBots || !m.user.bot)
+        .slice(0, limit)
+        .map((m) => {
+          const roles = m.roles.cache
+            .filter((r) => r.id !== ctx.guild.roles.everyone.id)
+            .map((r) => r.name);
+          return {
+            id: m.id,
+            username: m.user.username,
+            tag: m.user.tag,
+            display_name: m.nickname ?? m.user.displayName ?? m.user.username,
+            bot: m.user.bot,
+            joined_at: m.joinedAt?.toISOString() ?? null,
+            roles,
+          };
+        });
+
+      const lines = rows.map(
+        (r) =>
+          `- ${r.display_name} (@${r.username}) id=${r.id}${r.bot ? ' [BOT]' : ''} joined=${r.joined_at ?? '?'} roles=${r.roles.join(',') || 'none'}`,
+      );
+      return ok(lines.length ? lines.join('\n') : 'No members.', { count: rows.length, members: rows });
     },
   });
 

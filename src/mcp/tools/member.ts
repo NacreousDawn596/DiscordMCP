@@ -14,7 +14,7 @@ async function resolveMember(ctx: Parameters<ToolDescriptor['execute']>[0], name
 export function registerMemberTools(): void {
   registerTool({
     name: 'discord.member.get',
-    description: 'Get information about a member.',
+    description: 'Get detailed information about a member (id, username, nickname, bot flag, joined date, avatar, roles).',
     inputSchema: { type: 'object', properties: { user: { type: 'string' } }, required: ['user'] },
     risk: 'READ',
     mutates: false,
@@ -22,13 +22,27 @@ export function registerMemberTools(): void {
       const member = await resolveMember(ctx, args.user as string);
       if (!member) return fail(`Member not found: ${args.user}`);
       const roles = member.roles.cache.filter((r) => r.id !== ctx.guild.roles.everyone.id);
+      const info = {
+        id: member.id,
+        username: member.user.username,
+        tag: member.user.tag,
+        display_name: member.nickname ?? member.user.displayName ?? member.user.username,
+        nickname: member.nickname,
+        bot: member.user.bot,
+        joined_at: member.joinedAt?.toISOString() ?? null,
+        avatar: member.displayAvatarURL(),
+        roles: roles.map((r) => ({ id: r.id, name: r.name })),
+      };
       return ok(
         [
-          `${member.user.tag} (${member.id})`,
-          `Nickname: ${member.nickname ?? '(none)'}`,
-          `Joined: ${member.joinedAt?.toISOString() ?? 'unknown'}`,
-          `Roles: ${roles.map((r) => r.name).join(', ') || 'none'}`,
+          `${info.display_name} (@${info.username}) (${info.id})`,
+          `Tag: ${info.tag}${info.bot ? ' [BOT]' : ''}`,
+          `Nickname: ${info.nickname ?? '(none)'}`,
+          `Joined: ${info.joined_at ?? 'unknown'}`,
+          `Avatar: ${info.avatar}`,
+          `Roles: ${info.roles.map((r) => r.name).join(', ') || 'none'}`,
         ].join('\n'),
+        info,
       );
     },
   });

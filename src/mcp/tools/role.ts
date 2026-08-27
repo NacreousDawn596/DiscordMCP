@@ -1,8 +1,11 @@
-import { PermissionFlagsBits } from 'discord.js';
+import { PermissionFlagsBits, PermissionsBitField, type Role } from 'discord.js';
 import type { ToolDescriptor } from '../types.js';
 import { registerTool } from '../registry.js';
 import { ok, fail, findRole, toId } from './helpers.js';
 import { formatRoles } from './format.js';
+
+const PERMISSION_EXAMPLES =
+  'Permission names, e.g. ViewChannel, SendMessages, ManageMessages, ManageChannels, ManageRoles, ManageGuild, ManageWebhooks, KickMembers, BanMembers, ModerateMembers, AddReactions, ReadMessageHistory, MentionEveryone, UseExternalEmojis, Connect, Speak, MuteMembers, DeafenMembers, MoveMembers, CreateInstantInvite, Administrator.';
 
 export function registerRoleTools(): void {
   registerTool({
@@ -19,22 +22,49 @@ export function registerRoleTools(): void {
   registerTool({
     name: 'discord.role.get',
     description: 'Get details about a single role by name or id.',
-    inputSchema: { type: 'object', properties: { name: { type: 'string' } }, required: ['name'] },
+    inputSchema: {
+      type: 'object',
+      properties: { name: { type: 'string', description: 'Role name or id.' } },
+      required: ['name'],
+    },
     risk: 'READ',
     mutates: false,
     async execute(ctx, args) {
       const role = findRole(ctx.guild, args.name as string);
       if (!role) return fail(`Role not found: ${args.name}`);
+      return ok(formatRole(role), {
+        id: role.id,
+        name: role.name,
+        color: role.color,
+        permissions: role.permissions.toArray(),
+      });
+    },
+  });
+
+  registerTool({
+    name: 'discord.role.get_permissions',
+    description: 'List the permissions currently granted to a role.',
+    inputSchema: {
+      type: 'object',
+      properties: { role: { type: 'string', description: 'Role name or id.' } },
+      required: ['role'],
+    },
+    risk: 'READ',
+    mutates: false,
+    async execute(ctx, args) {
+      const role = findRole(ctx.guild, args.role as string);
+      if (!role) return fail(`Role not found: ${args.role}`);
+      const perms = role.permissions.toArray();
       return ok(
-        `Role ${role.name} (${role.id})\nColor: #${role.color.toString(16).padStart(6, '0')}\nPermissions: ${role.permissions.toArray().join(', ') || 'none'}\nMention: <@&${role.id}>`,
-        { id: role.id, name: role.name, color: role.color },
+        perms.length ? `Role "${role.name}" permissions:\n${perms.map((p) => `  ✓ ${p}`).join('\n')}` : `Role "${role.name}" has no permissions.`,
+        { id: role.id, name: role.name, permissions: perms },
       );
     },
   });
 
   registerTool({
     name: 'discord.role.create',
-    description: 'Create a new role. Color should be a hex value like 0x3498db.',
+    description: `Create a new role. Color is a hex value like 0x3498db. ${PERMISSION_EXAMPLES}`,
     inputSchema: {
       type: 'object',
       properties: {
@@ -65,14 +95,16 @@ export function registerRoleTools(): void {
 
   registerTool({
     name: 'discord.role.edit',
-    description: 'Edit a role: rename, recolor, or change permissions.',
+    description: `Edit a role: rename, recolor, replace all permissions, or add/remove specific permissions individually via allow/deny. ${PERMISSION_EXAMPLES}`,
     inputSchema: {
       type: 'object',
       properties: {
-        name: { type: 'string', description: 'Current role name/id.' },
-        new_name: { type: 'string' },
-        color: { type: 'string' },
-        permissions: { type: 'array', items: { type: 'string' } },
+        name: { type: 'string', description: 'Current role name or id.' },
+        new_name: { type: 'string', description: 'New role name.' },
+        color: { type: 'string', description: 'New hex color.' },
+        permissions: { type: 'array', items: { type: 'string' }, description: 'Full replacement set of permission names.' },
+        allow: { type: 'array', items: { type: 'string' }, description: 'Permissions to ADD on top of the current set.' },
+        deny: { type: 'array', items: { type: 'string' }, description: 'Permissions to REMOVE from the current set.' },
       },
       required: ['name'],
     },
@@ -82,14 +114,66 @@ export function registerRoleTools(): void {
     async execute(ctx, args) {
       const role = findRole(ctx.guild, args.name as string);
       if (!role) return fail(`Role not found: ${args.name}`);
+      if (role.managed) return fail(`Role "${role.name}" is managed by an integration and cannot be edited.`);
+
       const update: Record<string, unknown> = {};
       if (args.new_name) update.name = String(args.new_name).slice(0, 100);
       if (args.color !== undefined) update.color = parseColor(args.color as string) ?? undefined;
       if (args.permissions !== undefined) {
         update.permissions = parsePermissions(args.permissions as string[] | undefined);
       }
-      await role.edit(update as never);
-      return ok(`Updated role "${role.name}".`);
+      if (Object.keys(update).length > 0) {
+        await role.edit(update as never);
+      }
+
+      const allow = (args.allow as string[] | undefined) ?? [];
+      const deny = (args.deny as string[] | undefined) ?? [];
+      if (allow.length > 0 || deny.length > 0) {
+        await applyPermissionDelta(role, allow, deny);
+      }
+
+      const summary = role.permissions.toArray().join(', ') || 'none';
+      return ok(`Updated role "${role.name}". Permissions now: ${summary}`, {
+        id: role.id,
+        name: role.name,
+        permissions: role.permissions.toArray(),
+      });
+    },
+  });
+
+  registerTool({
+    name: 'discord.role.set_permissions',
+    description: `Add and/or remove specific permissions on a role without touching the rest. ${PERMISSION_EXAMPLES}`,
+    inputSchema: {
+      type: 'object',
+      properties: {
+        role: { type: 'string', description: 'Role name or id.' },
+        allow: { type: 'array', items: { type: 'string' }, description: 'Permissions to grant.' },
+        deny: { type: 'array', items: { type: 'string' }, description: 'Permissions to revoke.' },
+      },
+      required: ['role'],
+    },
+    risk: 'HIGH',
+    capability: 'MANAGE_ROLES',
+    mutates: true,
+    async execute(ctx, args) {
+      const role = findRole(ctx.guild, args.role as string);
+      if (!role) return fail(`Role not found: ${args.role}`);
+      if (role.managed) return fail(`Role "${role.name}" is managed and cannot be modified.`);
+
+      const allow = (args.allow as string[] | undefined) ?? [];
+      const deny = (args.deny as string[] | undefined) ?? [];
+      if (allow.length === 0 && deny.length === 0) {
+        return fail('Provide at least one of allow or deny.');
+      }
+      await applyPermissionDelta(role, allow, deny);
+
+      const summary = role.permissions.toArray().join(', ') || 'none';
+      return ok(`Updated permissions for role "${role.name}". Now: ${summary}`, {
+        id: role.id,
+        name: role.name,
+        permissions: role.permissions.toArray(),
+      });
     },
   });
 
@@ -204,6 +288,18 @@ export function registerRoleTools(): void {
   });
 }
 
+function formatRole(role: Role): string {
+  return [
+    `Role ${role.name} (${role.id})`,
+    `Color: #${role.color.toString(16).padStart(6, '0')}`,
+    `Hoisted: ${role.hoist ? 'yes' : 'no'}`,
+    `Mentionable: ${role.mentionable ? 'yes' : 'no'}`,
+    `Managed: ${role.managed ? 'yes' : 'no'}`,
+    `Permissions: ${role.permissions.toArray().join(', ') || 'none'}`,
+    `Mention: <@&${role.id}>`,
+  ].join('\n');
+}
+
 function parseColor(raw: string | undefined): number | undefined {
   if (!raw) return undefined;
   const hex = raw.replace(/^#/, '').replace(/^0x/i, '');
@@ -219,6 +315,13 @@ function parsePermissions(names: string[] | undefined): bigint[] {
     if (flag !== undefined) bits.push(flag);
   }
   return bits;
+}
+
+async function applyPermissionDelta(role: Role, allow: string[], deny: string[]): Promise<void> {
+  const bits = new PermissionsBitField(role.permissions.bitfield);
+  if (allow.length > 0) bits.add(parsePermissions(allow));
+  if (deny.length > 0) bits.remove(parsePermissions(deny));
+  await role.setPermissions(bits);
 }
 
 async function resolveMember(ctx: Parameters<ToolDescriptor['execute']>[0], nameOrId: string) {
