@@ -102,6 +102,37 @@ npm run cli -- config         # show resolved config (secrets redacted)
 npm run cli -- test           # quick self-test
 ```
 
+## Docker
+
+The project ships a multi-stage [`Dockerfile`](./Dockerfile) (build in a full
+toolchain image, run in a slim image as the `node` user) and a
+[`docker-compose.yml`](./docker-compose.yml).
+
+```bash
+# Build and run with docker compose
+docker compose up --build -d
+
+# Or build the image directly
+docker build -t discord-agent .
+
+# Run the self-test inside the built image
+docker run --rm discord-agent node dist/cli/cli.js test
+```
+
+The SQLite database is persisted in the `agent-data` volume at
+`/app/data/agent.sqlite`. See [docs/DEPLOYMENT.md](./docs/DEPLOYMENT.md).
+
+A **prebuilt image** is published to the GitHub Container Registry by the
+[Docker workflow](./.github/workflows/docker.yml) on every push to `main` and
+every tag:
+
+```bash
+docker pull ghcr.io/NacreousDawn596/DiscordMCP:main
+```
+
+The [CI workflow](./.github/workflows/ci.yml) runs typecheck, the test suite,
+and a production build on every push and PR.
+
 ## Configuration
 
 See [`.env.example`](./.env.example) for the full list. Key settings:
