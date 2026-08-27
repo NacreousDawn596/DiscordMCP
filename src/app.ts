@@ -34,6 +34,12 @@ import { truncate } from './mcp/tools/helpers.js';
 const YES_WORDS = new Set(['yes', 'y', 'confirm', 'proceed', 'execute', 'go ahead', 'approved']);
 const NO_WORDS = new Set(['no', 'n', 'cancel', 'stop', 'abort']);
 
+/** Ensures we never try to send an empty/whitespace-only message to Discord. */
+function nonEmpty(text: string): string {
+  const t = (text ?? '').trim();
+  return t.length > 0 ? truncate(text) : 'Done.';
+}
+
 export class AgentApp {
   readonly config: AppConfig;
   private client: Client;
@@ -182,6 +188,7 @@ export class AgentApp {
     message: Message,
     outcome: Awaited<ReturnType<AgentRuntime['run']>>,
   ): Promise<void> {
+    const content = nonEmpty(outcome.response);
     if (outcome.needsConfirmation) {
       const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
         new ButtonBuilder()
@@ -193,9 +200,9 @@ export class AgentApp {
           .setLabel('Cancel')
           .setStyle(ButtonStyle.Danger),
       );
-      await message.reply({ content: truncate(outcome.response), components: [row] });
+      await message.reply({ content, components: [row] }).catch(() => undefined);
     } else {
-      await message.reply(truncate(outcome.response));
+      await message.reply(content).catch(() => undefined);
     }
   }
 
@@ -215,7 +222,7 @@ export class AgentApp {
       await interaction.deferUpdate();
       const outcome = await this.runtime.resume(ctx, runId, approved);
       await interaction
-        .editReply({ content: truncate(outcome.response), components: [] })
+        .editReply({ content: nonEmpty(outcome.response), components: [] })
         .catch(() => undefined);
       return;
     }
@@ -237,7 +244,7 @@ export class AgentApp {
         await interaction.editReply('Something went wrong processing your request.');
         return;
       }
-      await interaction.editReply(truncate(outcome.response));
+      await interaction.editReply(nonEmpty(outcome.response));
     }
   }
 

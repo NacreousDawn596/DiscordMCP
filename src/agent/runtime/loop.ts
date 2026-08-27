@@ -155,7 +155,7 @@ export class AgentRuntime {
       });
 
       if (resp.toolCalls.length === 0) {
-        const content = resp.content ?? 'Done.';
+        const content = resp.content && resp.content.trim() ? resp.content : 'Done.';
         this.finalize(runId, content, true, startedAt, messages, toolsUsed, actions);
         return {
           response: content,
