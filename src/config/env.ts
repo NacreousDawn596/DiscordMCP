@@ -95,6 +95,8 @@ export interface AppConfig {
     provider: string;
     apiKey: string;
     model: string;
+    /** Ordered list of models to try; falls back to the next on failure/quota. */
+    models: string[];
     baseUrl: string;
     temperature: number;
     maxTokens: number;
@@ -141,7 +143,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     llm: {
       provider: parsed.LLM_PROVIDER,
       apiKey: parsed.LLM_API_KEY,
-      model: parsed.LLM_MODEL,
+      model: parseModels(parsed.LLM_MODEL)[0] ?? 'gpt-4o-mini',
+      models: parseModels(parsed.LLM_MODEL),
       baseUrl: parsed.LLM_BASE_URL,
       temperature: parsed.LLM_TEMPERATURE,
       maxTokens: parsed.LLM_MAX_TOKENS,
@@ -183,4 +186,16 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
       contextHistoryLimit: parsed.CONTEXT_HISTORY_LIMIT,
     },
   };
+}
+
+/** Splits a comma-separated model list into a trimmed, de-duplicated array. */
+function parseModels(raw: string): string[] {
+  return [
+    ...new Set(
+      raw
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean),
+    ),
+  ];
 }

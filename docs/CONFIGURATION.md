@@ -35,7 +35,7 @@ to `.env` and edit.
 | --- | --- | --- |
 | `LLM_PROVIDER` | `openai` | Provider selection. See [§2 Providers](#2-llm-providers). |
 | `LLM_API_KEY` | *(empty)* | API key (not needed for `ollama`). |
-| `LLM_MODEL` | `gpt-4o-mini` | Model name. See [§2 Providers](#2-llm-providers) for per-provider examples. |
+| `LLM_MODEL` | `gpt-4o-mini` | Model name, or a comma-separated list tried in order. On failure/quota the next model is used; every new request starts from the first. All share one provider/key/base URL. |
 | `LLM_BASE_URL` | *(auto)* | Optional endpoint override. Auto-set for OpenRouter/DeepSeek/Ollama; **required** for `custom`. |
 | `LLM_TEMPERATURE` | `0.2` | Sampling temperature, `0.0`–`2.0`. |
 | `LLM_MAX_TOKENS` | `2048` | Max output tokens per LLM call. |
@@ -104,6 +104,12 @@ to `.env` and edit.
 | `deepseek` | OpenAI-compatible | `deepseek-v4-flash`, `deepseek-v4-pro` | auto (`api.deepseek.com/v1`) |
 | `ollama` | OpenAI-compatible | `llama3.1`, any local model | auto (`localhost:11434/v1`) |
 | `custom` / `openai-compatible` | OpenAI-compatible | any | **required** |
+
+> **Model fallback.** `LLM_MODEL` accepts a comma-separated list (e.g.
+> `gemini-3.1-flash-lite,gemini-3.5-flash,gemini-2.5-flash`). The agent starts
+> from the first model on every request; if a model errors or hits its quota,
+> it falls back to the next in the list. All models share the same provider,
+> API key, and base URL (`ModelFallbackProvider` in `src/llm/providers/`).
 
 > **Tool-name mapping.** Providers restrict tool/function names to
 > `[A-Za-z0-9_-]` (no dots). Canonical names keep the dotted `discord.*` form

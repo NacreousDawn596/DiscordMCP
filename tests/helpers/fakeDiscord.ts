@@ -184,6 +184,7 @@ export function makeTestConfig(overrides: Partial<AppConfig> = {}): AppConfig {
       provider: 'openai',
       apiKey: '',
       model: 'test-model',
+      models: ['test-model'],
       baseUrl: '',
       temperature: 0,
       maxTokens: 512,

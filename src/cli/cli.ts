@@ -73,7 +73,11 @@ function doctor(config: ReturnType<typeof loadConfig>): void {
     config.llm.apiKey.length > 0 || config.llm.provider === 'ollama',
     config.llm.apiKey.length > 0 ? 'present' : 'LLM_API_KEY is empty',
   ]);
-  checks.push(['LLM model', config.llm.model.length > 0, config.llm.model]);
+  checks.push([
+    'LLM model',
+    config.llm.models.length > 0,
+    config.llm.models.join(', ') + (config.llm.models.length > 1 ? ` (${config.llm.models.length} fallback chain)` : ''),
+  ]);
 
   try {
     openDatabase(config);
@@ -104,7 +108,7 @@ function status(config: ReturnType<typeof loadConfig>): void {
   process.stdout.write(
     [
       `LLM provider:   ${config.llm.provider}`,
-      `LLM model:      ${config.llm.model}`,
+      `LLM model:      ${config.llm.models.join(', ')}`,
       `Confirmation:   ${config.agent.confirmationLevel}`,
       `Default mode:   ${config.agent.defaultMode}`,
       `Personality:    ${config.agent.personality}`,
@@ -163,7 +167,7 @@ function showConfig(config: ReturnType<typeof loadConfig>): void {
       `DISCORD_APPLICATION_ID=${config.discord.applicationId || '(empty)'}`,
       `LLM_PROVIDER=${config.llm.provider}`,
       `LLM_API_KEY=${redact(config.llm.apiKey)}`,
-      `LLM_MODEL=${config.llm.model}`,
+      `LLM_MODEL=${config.llm.models.join(',')}`,
       `LLM_BASE_URL=${config.llm.baseUrl || '(default)'}`,
       `AGENT_NAME=${config.agent.name}`,
       `AGENT_CONFIRMATION_LEVEL=${config.agent.confirmationLevel}`,
