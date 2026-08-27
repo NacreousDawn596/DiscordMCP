@@ -103,8 +103,7 @@ export function truncate(text: string, length = 1900): string {
  * Fetches the full member roster (not just the cache). Falls back to the cache
  * with an explanatory note if the fetch fails (e.g. missing Server Members
  * intent).
- */
-export async function fetchAllMembers(
+ */export async function fetchAllMembers(
   guild: Guild,
 ): Promise<{ members: Collection<string, GuildMember>; note?: string }> {
   try {
@@ -175,4 +174,29 @@ export async function setOverwrite(
   }
 
   await channel.permissionOverwrites.edit(targetId, options);
+}
+
+/**
+ * Whether the bot (or a member) is able to manage a given role. Discord
+ * returns "Missing Permissions" (50013) when the actor's highest role is not
+ * strictly above the target role — even when they hold Manage Roles. This
+ * pre-check turns that opaque error into a clear message.
+ */
+export function canManageRole(
+  actor: GuildMember | null,
+  role: Role,
+): { ok: true } | { ok: false; reason: string } {
+  if (!actor) return { ok: false, reason: 'the acting member is unavailable' };
+  if (role.managed) return { ok: false, reason: `role "${role.name}" is managed by an integration` };
+  if (role.id === actor.guild.roles.everyone.id) {
+    return { ok: false, reason: 'the @everyone role cannot be modified' };
+  }
+  const highest = actor.roles.highest;
+  if (role.position >= highest.position) {
+    return {
+      ok: false,
+      reason: `role "${role.name}" is at or above my highest role ("${highest.name}") — move my role higher in the server role hierarchy (or grant me the role)`,
+    };
+  }
+  return { ok: true };
 }

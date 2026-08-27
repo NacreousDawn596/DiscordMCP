@@ -1,6 +1,6 @@
 import type { ToolDescriptor } from '../types.js';
 import { registerTool } from '../registry.js';
-import { ok, fail, findRole, toId, clampInt, resolveMember, fetchAllMembers } from './helpers.js';
+import { ok, fail, findRole, toId, clampInt, resolveMember, fetchAllMembers, canManageRole } from './helpers.js';
 
 export function registerMemberTools(): void {
   registerTool({
@@ -117,6 +117,8 @@ export function registerMemberTools(): void {
       const role = findRole(ctx.guild, args.role as string);
       if (!member) return fail(`Member not found: ${args.user}`);
       if (!role) return fail(`Role not found: ${args.role}`);
+      const can = canManageRole(ctx.guild.members.me ?? null, role);
+      if (!can.ok) return fail(can.reason);
       await member.roles.add(role);
       return ok(`Added role "${role.name}" to ${member.user.tag}.`);
     },
@@ -138,6 +140,8 @@ export function registerMemberTools(): void {
       const role = findRole(ctx.guild, args.role as string);
       if (!member) return fail(`Member not found: ${args.user}`);
       if (!role) return fail(`Role not found: ${args.role}`);
+      const can = canManageRole(ctx.guild.members.me ?? null, role);
+      if (!can.ok) return fail(can.reason);
       await member.roles.remove(role);
       return ok(`Removed role "${role.name}" from ${member.user.tag}.`);
     },

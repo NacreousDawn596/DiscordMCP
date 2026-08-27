@@ -1,7 +1,7 @@
 import { PermissionFlagsBits, PermissionsBitField, type Role } from 'discord.js';
 import type { ToolDescriptor } from '../types.js';
 import { registerTool } from '../registry.js';
-import { ok, fail, findRole, resolveMember } from './helpers.js';
+import { ok, fail, findRole, resolveMember, canManageRole } from './helpers.js';
 import { formatRoles } from './format.js';
 
 const PERMISSION_EXAMPLES =
@@ -84,7 +84,7 @@ export function registerRoleTools(): void {
       const permissions = parsePermissions(args.permissions as string[] | undefined);
       const role = await ctx.guild.roles.create({
         name: String(args.name).slice(0, 100),
-        color: color ?? undefined,
+        colors: color !== undefined ? { primaryColor: color } : undefined,
         hoist: args.hoist !== undefined ? Boolean(args.hoist) : false,
         mentionable: args.mentionable !== undefined ? Boolean(args.mentionable) : false,
         permissions: permissions.length ? permissions : undefined,
@@ -114,11 +114,15 @@ export function registerRoleTools(): void {
     async execute(ctx, args) {
       const role = findRole(ctx.guild, args.name as string);
       if (!role) return fail(`Role not found: ${args.name}`);
-      if (role.managed) return fail(`Role "${role.name}" is managed by an integration and cannot be edited.`);
+      const can = canManageRole(ctx.guild.members.me ?? null, role);
+      if (!can.ok) return fail(can.reason);
 
       const update: Record<string, unknown> = {};
       if (args.new_name) update.name = String(args.new_name).slice(0, 100);
-      if (args.color !== undefined) update.color = parseColor(args.color as string) ?? undefined;
+      if (args.color !== undefined) {
+        const c = parseColor(args.color as string);
+        if (c !== undefined) update.colors = { primaryColor: c };
+      }
       if (args.permissions !== undefined) {
         update.permissions = parsePermissions(args.permissions as string[] | undefined);
       }
@@ -159,7 +163,8 @@ export function registerRoleTools(): void {
     async execute(ctx, args) {
       const role = findRole(ctx.guild, args.role as string);
       if (!role) return fail(`Role not found: ${args.role}`);
-      if (role.managed) return fail(`Role "${role.name}" is managed and cannot be modified.`);
+      const can = canManageRole(ctx.guild.members.me ?? null, role);
+      if (!can.ok) return fail(can.reason);
 
       const allow = (args.allow as string[] | undefined) ?? [];
       const deny = (args.deny as string[] | undefined) ?? [];
@@ -187,9 +192,8 @@ export function registerRoleTools(): void {
     async execute(ctx, args) {
       const role = findRole(ctx.guild, args.name as string);
       if (!role) return fail(`Role not found: ${args.name}`);
-      if (role.managed || role.id === ctx.guild.roles.everyone.id) {
-        return fail(`Role "${role.name}" cannot be deleted.`);
-      }
+      const can = canManageRole(ctx.guild.members.me ?? null, role);
+      if (!can.ok) return fail(can.reason);
       await role.delete();
       return ok(`Deleted role "${role.name}".`);
     },
@@ -214,6 +218,8 @@ export function registerRoleTools(): void {
       const member = await resolveMember(ctx.guild, args.user as string);
       if (!role) return fail(`Role not found: ${args.role}`);
       if (!member) return fail(`Member not found: ${args.user}`);
+      const can = canManageRole(ctx.guild.members.me ?? null, role);
+      if (!can.ok) return fail(can.reason);
       await member.roles.add(role);
       return ok(`Assigned role "${role.name}" to ${member.user.tag}.`);
     },
@@ -238,6 +244,8 @@ export function registerRoleTools(): void {
       const member = await resolveMember(ctx.guild, args.user as string);
       if (!role) return fail(`Role not found: ${args.role}`);
       if (!member) return fail(`Member not found: ${args.user}`);
+      const can = canManageRole(ctx.guild.members.me ?? null, role);
+      if (!can.ok) return fail(can.reason);
       await member.roles.remove(role);
       return ok(`Removed role "${role.name}" from ${member.user.tag}.`);
     },
