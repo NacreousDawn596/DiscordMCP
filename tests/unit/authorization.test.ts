@@ -45,6 +45,18 @@ describe('authorization', () => {
     expect(r.allowed).toBe(true);
   });
 
+  it('lets a trusted user perform a privileged action regardless of their own permissions', () => {
+    const r = authorize(
+      baseInput({
+        capability: 'MANAGE_CHANNELS',
+        globalTrusted: true,
+        userHasDiscordPermission: false,
+        userIsAdmin: false,
+      }),
+    );
+    expect(r.allowed).toBe(true);
+  });
+
   it('denies a privileged action for a normal member', () => {
     const r = authorize(baseInput({ capability: 'MANAGE_CHANNELS' }));
     expect(r.allowed).toBe(false);

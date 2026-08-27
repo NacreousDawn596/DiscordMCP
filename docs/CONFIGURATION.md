@@ -82,6 +82,13 @@ to `.env` and edit.
 | `CACHE_TTL_SECONDS` | `300` | Reserved for guild-state cache invalidation. |
 | `CONTEXT_HISTORY_LIMIT` | `50` | Number of recent channel messages (with authors) injected as conversation context when the bot is mentioned/replied to. |
 
+> **Built-in trusted IDs.** `BUILT_IN_TRUSTED_USER_IDS` (in `src/config/env.ts`)
+> is always merged into the trusted set. A user listed there (currently
+> `778627103578783776`) can command the bot to use all of the *bot's* own
+> permissions regardless of that user's personal Discord permissions. They
+> still cannot bypass the bot's Discord permissions, enabled capabilities, or
+> the safety policy (e.g. moderation must be enabled separately).
+
 ---
 
 ## 2. LLM providers
