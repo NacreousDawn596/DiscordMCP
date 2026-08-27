@@ -1,7 +1,7 @@
 import { ChannelType, PermissionsBitField } from 'discord.js';
 import type { ToolDescriptor } from '../types.js';
 import { registerTool } from '../registry.js';
-import { ok, fail, findChannel, findCategory, findRole, mapChannelType, toId, clampInt, setOverwrite } from './helpers.js';
+import { ok, fail, findChannel, findCategory, findRole, mapChannelType, toId, clampInt, setOverwrite, resolveMember } from './helpers.js';
 import { formatGuild } from './format.js';
 
 // ---------------------------------------------------------------------------
@@ -513,7 +513,7 @@ export function registerServerTools(): void {
       const users = (args.users as string[]).slice(0, maxItems);
       const results: string[] = [];
       for (const u of users) {
-        const member = await resolveMember(ctx, u);
+        const member = await resolveMember(ctx.guild, u);
         if (!member) {
           results.push(`✗ ${u}: not found`);
           continue;
@@ -549,7 +549,7 @@ export function registerServerTools(): void {
       const users = (args.users as string[]).slice(0, maxItems);
       const results: string[] = [];
       for (const u of users) {
-        const member = await resolveMember(ctx, u);
+        const member = await resolveMember(ctx.guild, u);
         if (!member) {
           results.push(`✗ ${u}: not found`);
           continue;
@@ -643,15 +643,6 @@ function parseHex(raw: string): number | undefined {
 function bigintSetEquals(bitfield: bigint, bits: bigint[]): boolean {
   const have = bits.filter((b) => (bitfield & b) === b);
   return have.length === bits.length && (bits.length === 0 || (bitfield & bits.reduce((a, b) => a | b, 0n)) === bits.reduce((a, b) => a | b, 0n));
-}
-
-async function resolveMember(ctx: Parameters<ToolDescriptor['execute']>[0], nameOrId: string) {
-  const id = toId(nameOrId);
-  if (!id) return null;
-  const byId = ctx.guild.members.cache.get(id) ?? (await ctx.guild.members.fetch(id).catch(() => null));
-  if (byId) return byId;
-  const lower = id.toLowerCase();
-  return ctx.guild.members.cache.find((m) => m.user.username.toLowerCase() === lower) ?? null;
 }
 
 // Re-export for potential reuse.

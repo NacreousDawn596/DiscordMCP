@@ -1,15 +1,6 @@
 import type { ToolDescriptor } from '../types.js';
 import { registerTool } from '../registry.js';
-import { ok, fail, findRole, toId, clampInt } from './helpers.js';
-
-async function resolveMember(ctx: Parameters<ToolDescriptor['execute']>[0], nameOrId: string) {
-  const id = toId(nameOrId);
-  if (!id) return null;
-  const byId = ctx.guild.members.cache.get(id) ?? (await ctx.guild.members.fetch(id).catch(() => null));
-  if (byId) return byId;
-  const lower = id.toLowerCase();
-  return ctx.guild.members.cache.find((m) => m.user.username.toLowerCase() === lower) ?? null;
-}
+import { ok, fail, findRole, toId, clampInt, resolveMember, fetchAllMembers } from './helpers.js';
 
 export function registerMemberTools(): void {
   registerTool({
@@ -19,7 +10,7 @@ export function registerMemberTools(): void {
     risk: 'READ',
     mutates: false,
     async execute(ctx, args) {
-      const member = await resolveMember(ctx, args.user as string);
+      const member = await resolveMember(ctx.guild, args.user as string);
       if (!member) return fail(`Member not found: ${args.user}`);
       const roles = member.roles.cache.filter((r) => r.id !== ctx.guild.roles.everyone.id);
       const info = {
@@ -60,7 +51,8 @@ export function registerMemberTools(): void {
     async execute(ctx, args) {
       const q = String(args.query).toLowerCase();
       const limit = Math.min(Number(args.limit) || 20, 100);
-      const matches = ctx.guild.members.cache
+      const { members, note } = await fetchAllMembers(ctx.guild);
+      const matches = members
         .filter(
           (m) =>
             m.user.username.toLowerCase().includes(q) ||
@@ -69,13 +61,15 @@ export function registerMemberTools(): void {
         )
         .first(limit)
         .map((m) => `- ${m.user.tag} (${m.id})`);
-      return ok(matches.length ? matches.join('\n') : 'No members matched.');
+      return ok(
+        (matches.length ? matches.join('\n') : 'No members matched.') + (note ? `\n\n${note}` : ''),
+      );
     },
   });
 
   registerTool({
     name: 'discord.member.list',
-    description: 'List members in the server.',
+    description: 'List all members in the server (fetches the full roster).',
     inputSchema: {
       type: 'object',
       properties: { limit: { type: 'integer' } },
@@ -85,8 +79,11 @@ export function registerMemberTools(): void {
     mutates: false,
     async execute(ctx, args) {
       const limit = Math.min(Number(args.limit) || 100, 500);
-      const members = ctx.guild.members.cache.first(limit);
-      return ok(members.map((m) => `- ${m.user.tag} (${m.id})`).join('\n') || 'No members.');
+      const { members, note } = await fetchAllMembers(ctx.guild);
+      const lines = members
+        .first(limit)
+        .map((m) => `- ${m.user.tag} (${m.id})${m.nickname ? ` aka ${m.nickname}` : ''}`);
+      return ok((lines.length ? lines.join('\n') : 'No members.') + (note ? `\n\n${note}` : ''));
     },
   });
 
@@ -97,7 +94,7 @@ export function registerMemberTools(): void {
     risk: 'READ',
     mutates: false,
     async execute(ctx, args) {
-      const member = await resolveMember(ctx, args.user as string);
+      const member = await resolveMember(ctx.guild, args.user as string);
       if (!member) return fail(`Member not found: ${args.user}`);
       const roles = member.roles.cache.filter((r) => r.id !== ctx.guild.roles.everyone.id);
       return ok(roles.map((r) => `- ${r.name} (${r.id})`).join('\n') || 'No roles.');
@@ -116,7 +113,7 @@ export function registerMemberTools(): void {
     capability: 'MANAGE_ROLES',
     mutates: true,
     async execute(ctx, args) {
-      const member = await resolveMember(ctx, args.user as string);
+      const member = await resolveMember(ctx.guild, args.user as string);
       const role = findRole(ctx.guild, args.role as string);
       if (!member) return fail(`Member not found: ${args.user}`);
       if (!role) return fail(`Role not found: ${args.role}`);
@@ -137,7 +134,7 @@ export function registerMemberTools(): void {
     capability: 'MANAGE_ROLES',
     mutates: true,
     async execute(ctx, args) {
-      const member = await resolveMember(ctx, args.user as string);
+      const member = await resolveMember(ctx.guild, args.user as string);
       const role = findRole(ctx.guild, args.role as string);
       if (!member) return fail(`Member not found: ${args.user}`);
       if (!role) return fail(`Role not found: ${args.role}`);
@@ -158,7 +155,7 @@ export function registerMemberTools(): void {
     capability: 'MANAGE_MEMBERS',
     mutates: true,
     async execute(ctx, args) {
-      const member = await resolveMember(ctx, args.user as string);
+      const member = await resolveMember(ctx.guild, args.user as string);
       if (!member) return fail(`Member not found: ${args.user}`);
       const nick = String(args.nickname).slice(0, 32);
       await member.setNickname(nick || null);
@@ -183,7 +180,7 @@ export function registerMemberTools(): void {
     isModerationAction: true,
     mutates: true,
     async execute(ctx, args) {
-      const member = await resolveMember(ctx, args.user as string);
+      const member = await resolveMember(ctx.guild, args.user as string);
       if (!member) return fail(`Member not found: ${args.user}`);
       const minutes = clampInt(args.minutes, 1, 40320, 10);
       await member.timeout(minutes * 60_000, args.reason ? String(args.reason) : undefined);
@@ -204,7 +201,7 @@ export function registerMemberTools(): void {
     isModerationAction: true,
     mutates: true,
     async execute(ctx, args) {
-      const member = await resolveMember(ctx, args.user as string);
+      const member = await resolveMember(ctx.guild, args.user as string);
       if (!member) return fail(`Member not found: ${args.user}`);
       await member.timeout(null);
       return ok(`Removed timeout from ${member.user.tag}.`);
@@ -224,7 +221,7 @@ export function registerMemberTools(): void {
     isModerationAction: true,
     mutates: true,
     async execute(ctx, args) {
-      const member = await resolveMember(ctx, args.user as string);
+      const member = await resolveMember(ctx.guild, args.user as string);
       if (!member) return fail(`Member not found: ${args.user}`);
       await member.kick(args.reason ? String(args.reason) : undefined);
       return ok(`Kicked ${member.user.tag}.`);
@@ -248,7 +245,7 @@ export function registerMemberTools(): void {
     isModerationAction: true,
     mutates: true,
     async execute(ctx, args) {
-      const member = await resolveMember(ctx, args.user as string);
+      const member = await resolveMember(ctx.guild, args.user as string);
       const userId = member?.id ?? toId(args.user as string);
       if (!userId) return fail(`Member not found: ${args.user}`);
       const days = clampInt(args.delete_message_days, 0, 7, 0);

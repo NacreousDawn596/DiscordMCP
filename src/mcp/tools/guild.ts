@@ -1,7 +1,7 @@
 import { ChannelType } from 'discord.js';
 import type { ToolDescriptor } from '../types.js';
 import { registerTool } from '../registry.js';
-import { ok, fail, clampInt } from './helpers.js';
+import { ok, fail, clampInt, fetchAllMembers } from './helpers.js';
 import { formatGuild, formatRoles, formatChannelSummary } from './format.js';
 
 export function registerGuildTools(): void {
@@ -124,7 +124,7 @@ export function registerGuildTools(): void {
 
   registerTool({
     name: 'discord.guild.list_members',
-    description: 'List members of the current server (paginated).',
+    description: 'List members of the current server (fetches the full roster).',
     inputSchema: {
       type: 'object',
       properties: { limit: { type: 'integer', description: 'Max members to return (default 100).' } },
@@ -134,11 +134,12 @@ export function registerGuildTools(): void {
     mutates: false,
     async execute(ctx, args) {
       const limit = Math.min(Number(args.limit) || 100, 500);
-      const members = ctx.guild.members.cache
+      const { members, note } = await fetchAllMembers(ctx.guild);
+      const lines = members
         .filter((m) => !m.user.bot)
         .first(limit)
         .map((m) => `- ${m.user.tag} (${m.id})${m.nickname ? ` aka ${m.nickname}` : ''}`);
-      return ok(members.length ? members.join('\n') : 'No members cached.');
+      return ok((lines.length ? lines.join('\n') : 'No members.') + (note ? `\n\n${note}` : ''));
     },
   });
 
@@ -163,8 +164,11 @@ export function registerGuildTools(): void {
       const limit = clampInt(args.limit, 1, 1000, 200);
 
       let members;
+      let note: string | undefined;
       if (fetchAll) {
-        members = await ctx.guild.members.fetch();
+        const result = await fetchAllMembers(ctx.guild);
+        members = result.members;
+        note = result.note;
       } else {
         members = ctx.guild.members.cache;
       }
@@ -191,7 +195,10 @@ export function registerGuildTools(): void {
         (r) =>
           `- ${r.display_name} (@${r.username}) id=${r.id}${r.bot ? ' [BOT]' : ''} joined=${r.joined_at ?? '?'} roles=${r.roles.join(',') || 'none'}`,
       );
-      return ok(lines.length ? lines.join('\n') : 'No members.', { count: rows.length, members: rows });
+      return ok(
+        (lines.length ? lines.join('\n') : 'No members.') + (note ? `\n\n${note}` : ''),
+        { count: rows.length, members: rows },
+      );
     },
   });
 

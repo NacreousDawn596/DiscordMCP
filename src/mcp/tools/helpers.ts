@@ -1,7 +1,9 @@
 import {
   ChannelType,
   PermissionsBitField,
+  type Collection,
   type Guild,
+  type GuildMember,
   type NonThreadGuildBasedChannel,
   type Role,
 } from 'discord.js';
@@ -95,6 +97,55 @@ export function clampInt(value: unknown, min: number, max: number, fallback: num
 
 export function truncate(text: string, length = 1900): string {
   return text.length > length ? `${text.slice(0, length - 1)}…` : text;
+}
+
+/**
+ * Fetches the full member roster (not just the cache). Falls back to the cache
+ * with an explanatory note if the fetch fails (e.g. missing Server Members
+ * intent).
+ */
+export async function fetchAllMembers(
+  guild: Guild,
+): Promise<{ members: Collection<string, GuildMember>; note?: string }> {
+  try {
+    const members = await guild.members.fetch();
+    return { members };
+  } catch (err) {
+    return {
+      members: guild.members.cache,
+      note: `Unable to fetch the full member list (${(err as Error).message}). Showing cached members only — enable "Server Members Intent" in the Discord Developer Portal.`,
+    };
+  }
+}
+
+/**
+ * Resolves a member by id, mention, or (after fetching the full roster)
+ * case-insensitive username/nickname/tag.
+ */
+export async function resolveMember(
+  guild: Guild,
+  nameOrId: string,
+): Promise<GuildMember | null> {
+  const id = toId(nameOrId);
+  if (!id) return null;
+
+  const byId = guild.members.cache.get(id) ?? (await guild.members.fetch(id).catch(() => null));
+  if (byId) return byId;
+
+  const lower = id.toLowerCase();
+  try {
+    await guild.members.fetch();
+  } catch {
+    /* fall back to cache */
+  }
+  return (
+    guild.members.cache.find(
+      (m) =>
+        m.user.username.toLowerCase() === lower ||
+        (m.nickname ?? '').toLowerCase() === lower ||
+        m.user.tag.toLowerCase() === lower,
+    ) ?? null
+  );
 }
 
 /**

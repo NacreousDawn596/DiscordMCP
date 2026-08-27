@@ -1,7 +1,7 @@
 import { ChannelType, PermissionsBitField } from 'discord.js';
 import type { ToolDescriptor } from '../types.js';
 import { registerTool } from '../registry.js';
-import { ok, fail, findChannel, findRole, toId } from './helpers.js';
+import { ok, fail, findChannel, findRole, toId, resolveMember } from './helpers.js';
 
 export function registerPermissionTools(): void {
   registerTool({
@@ -19,7 +19,7 @@ export function registerPermissionTools(): void {
     risk: 'READ',
     mutates: false,
     async execute(ctx, args) {
-      const member = args.user ? await resolveMember(ctx, args.user as string) : ctx.member;
+      const member = args.user ? await resolveMember(ctx.guild, args.user as string) : ctx.member;
       if (!member) return fail('Could not resolve member.');
       const channel: import('discord.js').NonThreadGuildBasedChannel | null = (
         args.channel
@@ -52,7 +52,7 @@ export function registerPermissionTools(): void {
     risk: 'READ',
     mutates: false,
     async execute(ctx, args) {
-      const member = await resolveMember(ctx, args.user as string);
+      const member = await resolveMember(ctx.guild, args.user as string);
       if (!member) return fail(`Member not found: ${args.user}`);
       const channel = findChannel(ctx.guild, args.channel as string);
       if (!channel) return fail(`Channel not found: ${args.channel}`);
@@ -121,7 +121,7 @@ export function registerPermissionTools(): void {
       const channel = findChannel(ctx.guild, args.channel as string);
       if (!channel) return fail(`Channel not found: ${args.channel}`);
       const role = findRole(ctx.guild, args.target as string);
-      const member = role ? null : await resolveMember(ctx, args.target as string);
+      const member = role ? null : await resolveMember(ctx.guild, args.target as string);
       const perms = role ? channel.permissionsFor(role) : channel.permissionsFor(member!);
       if (!perms) return fail('Could not compute permissions for target.');
       return ok(
@@ -195,11 +195,3 @@ export function registerPermissionTools(): void {
   });
 }
 
-async function resolveMember(ctx: Parameters<ToolDescriptor['execute']>[0], nameOrId: string) {
-  const id = toId(nameOrId);
-  if (!id) return null;
-  const byId = ctx.guild.members.cache.get(id) ?? (await ctx.guild.members.fetch(id).catch(() => null));
-  if (byId) return byId;
-  const lower = id.toLowerCase();
-  return ctx.guild.members.cache.find((m) => m.user.username.toLowerCase() === lower) ?? null;
-}

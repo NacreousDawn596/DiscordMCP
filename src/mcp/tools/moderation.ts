@@ -1,15 +1,6 @@
 import type { ToolDescriptor } from '../types.js';
 import { registerTool } from '../registry.js';
-import { ok, fail, toId, clampInt, findChannel } from './helpers.js';
-
-async function resolveMember(ctx: Parameters<ToolDescriptor['execute']>[0], nameOrId: string) {
-  const id = toId(nameOrId);
-  if (!id) return null;
-  const byId = ctx.guild.members.cache.get(id) ?? (await ctx.guild.members.fetch(id).catch(() => null));
-  if (byId) return byId;
-  const lower = id.toLowerCase();
-  return ctx.guild.members.cache.find((m) => m.user.username.toLowerCase() === lower) ?? null;
-}
+import { ok, fail, toId, clampInt, findChannel, resolveMember } from './helpers.js';
 
 export function registerModerationTools(): void {
   registerTool({
@@ -26,7 +17,7 @@ export function registerModerationTools(): void {
     isModerationAction: true,
     mutates: true,
     async execute(ctx, args) {
-      const member = await resolveMember(ctx, args.user as string);
+      const member = await resolveMember(ctx.guild, args.user as string);
       const userId = member?.id ?? toId(args.user as string);
       if (!userId) return fail(`Member not found: ${args.user}`);
       return ok(`Warning recorded for ${member?.user.tag ?? userId}: ${args.reason}`);
@@ -46,7 +37,7 @@ export function registerModerationTools(): void {
     isModerationAction: true,
     mutates: true,
     async execute(ctx, args) {
-      const member = await resolveMember(ctx, args.user as string);
+      const member = await resolveMember(ctx.guild, args.user as string);
       if (!member) return fail(`Member not found: ${args.user}`);
       const minutes = clampInt(args.minutes, 1, 40320, 10);
       await member.timeout(minutes * 60_000, args.reason ? String(args.reason) : undefined);
@@ -67,7 +58,7 @@ export function registerModerationTools(): void {
     isModerationAction: true,
     mutates: true,
     async execute(ctx, args) {
-      const member = await resolveMember(ctx, args.user as string);
+      const member = await resolveMember(ctx.guild, args.user as string);
       if (!member) return fail(`Member not found: ${args.user}`);
       await member.kick(args.reason ? String(args.reason) : undefined);
       return ok(`Kicked ${member.user.tag}.`);
@@ -87,7 +78,7 @@ export function registerModerationTools(): void {
     isModerationAction: true,
     mutates: true,
     async execute(ctx, args) {
-      const member = await resolveMember(ctx, args.user as string);
+      const member = await resolveMember(ctx.guild, args.user as string);
       const userId = member?.id ?? toId(args.user as string);
       if (!userId) return fail(`Member not found: ${args.user}`);
       await ctx.guild.members.ban(userId, { reason: args.reason ? String(args.reason) : undefined });

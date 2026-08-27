@@ -1,7 +1,7 @@
 import { PermissionFlagsBits, PermissionsBitField, type Role } from 'discord.js';
 import type { ToolDescriptor } from '../types.js';
 import { registerTool } from '../registry.js';
-import { ok, fail, findRole, toId } from './helpers.js';
+import { ok, fail, findRole, resolveMember } from './helpers.js';
 import { formatRoles } from './format.js';
 
 const PERMISSION_EXAMPLES =
@@ -211,7 +211,7 @@ export function registerRoleTools(): void {
     mutates: true,
     async execute(ctx, args) {
       const role = findRole(ctx.guild, args.role as string);
-      const member = await resolveMember(ctx, args.user as string);
+      const member = await resolveMember(ctx.guild, args.user as string);
       if (!role) return fail(`Role not found: ${args.role}`);
       if (!member) return fail(`Member not found: ${args.user}`);
       await member.roles.add(role);
@@ -235,7 +235,7 @@ export function registerRoleTools(): void {
     mutates: true,
     async execute(ctx, args) {
       const role = findRole(ctx.guild, args.role as string);
-      const member = await resolveMember(ctx, args.user as string);
+      const member = await resolveMember(ctx.guild, args.user as string);
       if (!role) return fail(`Role not found: ${args.role}`);
       if (!member) return fail(`Member not found: ${args.user}`);
       await member.roles.remove(role);
@@ -322,15 +322,4 @@ async function applyPermissionDelta(role: Role, allow: string[], deny: string[])
   if (allow.length > 0) bits.add(parsePermissions(allow));
   if (deny.length > 0) bits.remove(parsePermissions(deny));
   await role.setPermissions(bits);
-}
-
-async function resolveMember(ctx: Parameters<ToolDescriptor['execute']>[0], nameOrId: string) {
-  const id = toId(nameOrId);
-  if (!id) return null;
-  const byId = ctx.guild.members.cache.get(id) ?? (await ctx.guild.members.fetch(id).catch(() => null));
-  if (byId) return byId;
-  const lower = id.toLowerCase();
-  return (
-    ctx.guild.members.cache.find((m) => m.user.username.toLowerCase() === lower) ?? null
-  );
 }

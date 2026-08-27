@@ -160,7 +160,7 @@ use the discord-agent tools to create a "Development" category with
 ### How it works
 
 The MCP server (`npm run mcp`) boots the same Discord bot, logs in with your
-token, and serves all 124 tools over stdin/stdout. Each tool takes an optional
+token, and serves all 127 tools over stdin/stdout. Each tool takes an optional
 `guild_id` so the same server can manage every guild the bot is in.
 
 > **Important:** MCP calls run as the **bot itself** (admin context), scoped to
