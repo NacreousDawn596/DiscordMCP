@@ -110,10 +110,123 @@ See [`.env.example`](./.env.example) for the full list. Key settings:
 | --- | --- |
 | `DISCORD_BOT_TOKEN` | Bot token (required). |
 | `LLM_PROVIDER` | `openai`, `anthropic`, `gemini`, `openrouter`, `ollama`, `deepseek`, `custom`. |
-| `LLM_API_KEY` / `LLM_MODEL` / `LLM_BASE_URL` | Model selection and endpoint. |
+| `LLM_API_KEY` / `LLM_MODEL` / `LLM_BASE_URL` | Model selection and endpoint (`LLM_MODEL` accepts a comma-separated fallback list). |
 | `AGENT_CONFIRMATION_LEVEL` | Risk threshold for required confirmation (`HIGH` default). |
 | `ENABLE_MODERATION` | Gate destructive moderation tools. |
 | `ALLOWED_USER_IDS` | Comma-separated user IDs that bypass guild-level authorization. |
+
+## Connect to OpenCode (MCP)
+
+Yes — the `discord.*` tool suite can be exposed to **opencode** (or any MCP
+client: Claude Code, Cursor, etc.) as a real Model Context Protocol server over
+stdio. When connected, you can drive your Discord server from prompts like:
+
+```
+use the discord-agent tools to create a "Development" category with
+#frontend, #backend and #devops in guild 123456789
+```
+
+### How it works
+
+The MCP server (`npm run mcp`) boots the same Discord bot, logs in with your
+token, and serves all 124 tools over stdin/stdout. Each tool takes an optional
+`guild_id` so the same server can manage every guild the bot is in.
+
+> **Important:** MCP calls run as the **bot itself** (admin context), scoped to
+> whatever the bot can actually do. Destructive moderation (ban/kick/purge)
+> still requires `ENABLE_MODERATION=true`. There is no interactive confirmation
+> channel over MCP, so actions run immediately.
+
+### Step 1 — Build (or run with tsx)
+
+```bash
+npm install
+npm run build        # produces dist/mcp/entry.js
+```
+
+### Step 2 — Configure opencode
+
+Add an `mcp` entry to your opencode config. This can be the project config
+(`opencode.json`) or your global config (`~/.config/opencode/opencode.json`).
+
+**Option A — rely on the project `.env` (recommended):**
+
+```jsonc
+// opencode.json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "discord-agent": {
+      "type": "local",
+      "command": ["node", "dist/mcp/entry.js"],
+      "cwd": "/absolute/path/to/discord-agent",
+      "enabled": true,
+      "timeout": 30000
+    }
+  }
+}
+```
+
+Set `cwd` to the project directory so the server loads your `.env` (which holds
+`DISCORD_BOT_TOKEN` and, optionally, `MCP_DEFAULT_GUILD_ID`).
+
+**Option B — pass the token explicitly (no `.env` needed):**
+
+```jsonc
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "discord-agent": {
+      "type": "local",
+      "command": ["node", "dist/mcp/entry.js"],
+      "cwd": "/absolute/path/to/discord-agent",
+      "environment": {
+        "DISCORD_BOT_TOKEN": "your-bot-token",
+        "MCP_DEFAULT_GUILD_ID": "123456789"
+      },
+      "enabled": true,
+      "timeout": 30000
+    }
+  }
+}
+```
+
+> Set `timeout` above the default 5s — the server logs the bot into Discord
+> before answering, which can take a few seconds.
+
+**Dev (no build):** use `"command": ["npx", "tsx", "src/mcp/entry.ts"]`.
+
+### Step 3 — Restart opencode
+
+Restart opencode so it picks up the new MCP server. You can verify the
+connection with `/mcp` (or by asking: `list the discord-agent tools`).
+
+### Step 4 — Use it
+
+Every tool is prefixed `discord_`. Examples:
+
+```
+create a #welcome channel in guild 123456789 using discord-agent
+list the roles in guild 123456789
+audit the permissions in guild 123456789
+```
+
+If `MCP_DEFAULT_GUILD_ID` is set (or the bot is in exactly one guild), you can
+omit `guild_id`:
+
+```
+using discord-agent, create a Development category with #frontend and #backend
+```
+
+### MCP options
+
+| Option | Purpose |
+| --- | --- |
+| `MCP_DEFAULT_GUILD_ID` | Default guild when a tool call omits `guild_id`. |
+| `guild_id` (tool arg) | Target guild for a specific call; overrides the default. |
+
+See [docs/CONFIGURATION.md](./docs/CONFIGURATION.md) for the full tool catalog
+and `npm run cli -- capabilities` for the live list.
 
 ## Architecture
 

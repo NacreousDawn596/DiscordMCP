@@ -15,9 +15,12 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "cli": "tsx src/cli/cli.ts",
-    "doctor": "tsx src/cli/cli.ts doctor"
+    "doctor": "tsx src/cli/cli.ts doctor",
+    "mcp": "tsx src/mcp/entry.ts",
+    "start:mcp": "node dist/mcp/entry.js"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
     "better-sqlite3": "^11.8.1",
     "croner": "^8.1.2",
     "discord.js": "^14.16.3",
