@@ -4,8 +4,9 @@ import { getLogger } from '../logging/logger.js';
 export interface EventPayload {
   guild: { id: string };
   member?: { id?: string; user?: { bot?: boolean } } | null;
-  message?: { id?: string; author?: { bot?: boolean } } | null;
+  message?: { id?: string; content?: string; author?: { bot?: boolean } } | null;
   channelId?: string | null;
+  channelName?: string | null;
   [key: string]: unknown;
 }
 
@@ -109,19 +110,156 @@ export class AutomationEngine {
     }
   }
 
-  private matchesConditions(
+  public matchesConditions(
     conditions: Array<{ description: string }>,
     payload: EventPayload,
   ): boolean {
+    if (!conditions || conditions.length === 0) return true;
+
     for (const condition of conditions) {
-      const text = condition.description.toLowerCase();
-      if (text.includes('not a bot') || text.includes('non-bot') || text.includes('human')) {
-        if (payload.member?.user?.bot) return false;
-      }
-      if (text.includes('only bots')) {
-        if (!payload.member?.user?.bot) return false;
+      const desc = condition.description?.trim();
+      if (!desc) continue;
+
+      if (!this.matchesSingleCondition(desc, payload)) {
+        return false;
       }
     }
+    return true;
+  }
+
+  private matchesSingleCondition(desc: string, payload: EventPayload): boolean {
+    const lowerDesc = desc.toLowerCase().trim();
+
+    // 1. Bot / Human status check
+    const isBotAuthor = Boolean(payload.message?.author?.bot || payload.member?.user?.bot);
+    if (
+      lowerDesc.includes('not a bot') ||
+      lowerDesc.includes('non-bot') ||
+      lowerDesc.includes('human') ||
+      lowerDesc.includes('users only')
+    ) {
+      if (isBotAuthor) return false;
+    }
+
+    if (
+      lowerDesc.includes('only bots') ||
+      lowerDesc.includes('bot only') ||
+      lowerDesc.includes('is bot')
+    ) {
+      if (!isBotAuthor) return false;
+    }
+
+    // 2. Channel check (if condition specifies channel name or id)
+    const channelMatch = lowerDesc.match(/(?:\bin\b|\bchannel\s+(?:is\s+)?)\s*#?([a-zA-Z0-9_-]+)/i);
+    let channelChecked = false;
+    if (channelMatch && channelMatch[1]) {
+      channelChecked = true;
+      const targetChannel = channelMatch[1].toLowerCase();
+      const currentChannelId = payload.channelId?.toLowerCase();
+      const currentChannelName = (payload.channelName as string | undefined)?.toLowerCase();
+      const rawChannelName = currentChannelName?.replace(/^#/, '');
+
+      const isChannelMatch =
+        currentChannelId === targetChannel ||
+        currentChannelName === targetChannel ||
+        currentChannelName === `#${targetChannel}` ||
+        rawChannelName === targetChannel;
+
+      if (!isChannelMatch) return false;
+    }
+
+    // 3. Message Content checks (when payload has message content)
+    if (payload.message && typeof payload.message.content === 'string') {
+      const msgContent = payload.message.content.trim();
+      const msgLower = msgContent.toLowerCase();
+
+      // Check for quoted strings (e.g. "message content is '!fact'" or 'when user types "!fact"')
+      const quotes = Array.from(desc.matchAll(/["'`]([^"'`]+)["'`]/g)).map((m) => m[1]!);
+      if (quotes.length > 0) {
+        for (const q of quotes) {
+          const qLower = q.toLowerCase();
+          if (lowerDesc.includes('starts with') || lowerDesc.includes('prefix')) {
+            if (!msgLower.startsWith(qLower)) return false;
+          } else if (
+            lowerDesc.includes('equals') ||
+            lowerDesc.includes('message is') ||
+            lowerDesc.includes('content is')
+          ) {
+            if (msgLower !== qLower) return false;
+          } else if (lowerDesc.includes('ends with')) {
+            if (!msgLower.endsWith(qLower)) return false;
+          } else {
+            if (!msgLower.includes(qLower)) return false;
+          }
+        }
+        return true;
+      }
+
+      // Check for command tokens starting with !, /, $, ., or ? (e.g., !fact, /help, $price)
+      const commandTokens = Array.from(desc.matchAll(/([!/$.?][a-zA-Z0-9_-]+)/g)).map((m) => m[1]!);
+      if (commandTokens.length > 0) {
+        for (const token of commandTokens) {
+          const tokenLower = token.toLowerCase();
+          const firstWord = msgLower.split(/\s+/)[0];
+          const matchedToken =
+            firstWord === tokenLower ||
+            msgLower.startsWith(tokenLower + ' ') ||
+            msgLower === tokenLower ||
+            msgLower.includes(tokenLower);
+          if (!matchedToken) return false;
+        }
+        return true;
+      }
+
+      // Explicit keywords without quotes:
+      // "starts with <text>" or "prefix <text>"
+      const startsWithMatch = desc.match(/(?:starts\s+with|prefix)\s+([^\s,]+)/i);
+      if (startsWithMatch && startsWithMatch[1]) {
+        return msgLower.startsWith(startsWithMatch[1].toLowerCase());
+      }
+
+      // "ends with <text>"
+      const endsWithMatch = desc.match(/ends\s+with\s+([^\s,]+)/i);
+      if (endsWithMatch && endsWithMatch[1]) {
+        return msgLower.endsWith(endsWithMatch[1].toLowerCase());
+      }
+
+      // "message is <text>", "content is <text>", "equals <text>"
+      const equalsMatch = desc.match(/(?:message|content)\s+(?:is|equals)\s+([^\s,]+)/i);
+      if (equalsMatch && equalsMatch[1]) {
+        return msgLower === equalsMatch[1].toLowerCase();
+      }
+
+      // "contains <text>" or "includes <text>"
+      const containsMatch = desc.match(/(?:contains|includes)\s+([^\s,]+)/i);
+      if (containsMatch && containsMatch[1]) {
+        return msgLower.includes(containsMatch[1].toLowerCase());
+      }
+
+      // Check if description specifies a trigger phrase requirement (e.g. "when user types hello")
+      const triggerPhraseMatch = desc.match(/(?:when|if)\s+(?:someone|user|person|a user)?\s*(?:sends|types|says)\s+(.+)/i);
+      if (triggerPhraseMatch && triggerPhraseMatch[1]) {
+        const phrase = triggerPhraseMatch[1].replace(/message|content/gi, '').trim().toLowerCase();
+        if (phrase.length > 0) {
+          return msgLower.includes(phrase) || msgLower.startsWith(phrase);
+        }
+      }
+
+      // If condition text is purely metadata (bot/channel check only), message content check is satisfied
+      const isMetaOnly =
+        channelChecked ||
+        lowerDesc.includes('bot') ||
+        lowerDesc.includes('human') ||
+        lowerDesc.includes('channel') ||
+        lowerDesc.includes('non-bot');
+      if (isMetaOnly) {
+        return true;
+      }
+
+      // Fallback for short direct condition descriptions (e.g., desc = "hello world")
+      return msgLower.startsWith(lowerDesc) || msgLower.includes(lowerDesc);
+    }
+
     return true;
   }
 
