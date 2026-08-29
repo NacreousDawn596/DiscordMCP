@@ -2,11 +2,25 @@ import { automationRepository } from '../database/repositories/automationReposit
 import { getLogger } from '../logging/logger.js';
 
 export interface EventPayload {
-  guild: { id: string };
-  member?: { id?: string; user?: { bot?: boolean } } | null;
-  message?: { id?: string; content?: string; author?: { bot?: boolean } } | null;
+  guild: {
+    id: string;
+    roles?: {
+      cache:
+        | Map<string, { id: string; name: string }>
+        | { get(id: string): unknown; find(fn: (r: { name: string }) => boolean): unknown };
+    };
+  };
+  member?: {
+    id?: string;
+    roles?: { add(role: unknown): Promise<unknown>; remove(role: unknown): Promise<unknown> };
+    user?: { bot?: boolean };
+  } | null;
+  message?: { id?: string; content?: string | null; author?: { bot?: boolean } | null } | null;
+  messageId?: string | null;
   channelId?: string | null;
   channelName?: string | null;
+  user?: { id?: string; bot?: boolean } | null;
+  emoji?: { name?: string | null; id?: string | null; identifier?: string } | null;
   [key: string]: unknown;
 }
 
@@ -43,9 +57,16 @@ export class AutomationEngine {
     const automations = automationRepository.listAutomations(guildId, trigger);
     if (automations.length === 0) return;
 
+    const isReactionEvent = trigger.startsWith('reaction_');
+
     for (const automation of automations) {
-      // Skip if the event originated from a bot (prevents self‑loops)
-      if (payload.message?.author?.bot || payload.member?.user?.bot) {
+      // Skip if the actor who triggered the event is a bot (prevents self‑loops).
+      // For reaction events, the actor is payload.user/payload.member, NOT payload.message.author (which is the message author).
+      const isActorBot = isReactionEvent
+        ? Boolean(payload.user?.bot || payload.member?.user?.bot)
+        : Boolean(payload.message?.author?.bot || payload.member?.user?.bot || payload.user?.bot);
+
+      if (isActorBot) {
         continue;
       }
 
@@ -55,13 +76,26 @@ export class AutomationEngine {
       }
 
       const conditions = this.parseConditions(automation.conditions);
-      if (!this.matchesConditions(conditions, payload)) continue;
+      if (!this.matchesConditions(conditions, payload, trigger)) continue;
 
       const action = this.parseAction(automation.action);
       getLogger().info(
         { guildId, trigger, automationId: automation.id },
         'automation triggered',
       );
+
+      // Fast-path execution for reaction role actions (instant role add/remove)
+      if (
+        (trigger === 'reaction_add' || trigger === 'reaction_remove') &&
+        payload.member
+      ) {
+        const handledFastRole = await this.tryExecuteReactionRole(
+          trigger,
+          action.description,
+          payload,
+        );
+        if (handledFastRole) continue;
+      }
 
       try {
         await this.runner(guildId, action.description, payload.channelId ?? null);
@@ -74,13 +108,79 @@ export class AutomationEngine {
     }
   }
 
+  private async tryExecuteReactionRole(
+    trigger: string,
+    actionDesc: string,
+    payload: EventPayload,
+  ): Promise<boolean> {
+    const roleMatch = actionDesc.match(/(?:add|give|assign|remove|take)\s+role\s+["']?([^"']+)["']?/i);
+    if (!roleMatch || !roleMatch[1]) return false;
+
+    const roleNameOrId = roleMatch[1].trim().toLowerCase();
+    const guild = payload.guild as unknown as import('discord.js').Guild;
+    const member = payload.member as unknown as import('discord.js').GuildMember;
+
+    if (!guild?.roles?.cache || !member?.roles) return false;
+
+    let role =
+      guild.roles.cache.get(roleNameOrId) ??
+      guild.roles.cache.find(
+        (r) => r.name.toLowerCase() === roleNameOrId || r.name.toLowerCase() === `#${roleNameOrId}`,
+      );
+
+    if (!role && 'fetch' in guild.roles) {
+      try {
+        await (guild.roles as unknown as { fetch: () => Promise<unknown> }).fetch();
+        role =
+          guild.roles.cache.get(roleNameOrId) ??
+          guild.roles.cache.find(
+            (r) => r.name.toLowerCase() === roleNameOrId || r.name.toLowerCase() === `#${roleNameOrId}`,
+          );
+      } catch {
+        // ignore fetch error
+      }
+    }
+
+    if (!role) {
+      getLogger().warn({ roleNameOrId, guildId: guild.id }, 'reaction role target role not found');
+      return false;
+    }
+
+    const isRemove =
+      trigger === 'reaction_remove' ||
+      actionDesc.toLowerCase().includes('remove') ||
+      actionDesc.toLowerCase().includes('take');
+
+    try {
+      if (isRemove) {
+        await member.roles.remove(role);
+        getLogger().info({ roleId: role.id, userId: member.id }, 'removed reaction role from member');
+      } else {
+        await member.roles.add(role);
+        getLogger().info({ roleId: role.id, userId: member.id }, 'added reaction role to member');
+      }
+      return true;
+    } catch (err) {
+      getLogger().error({ err, roleId: role.id, userId: member.id }, 'failed to toggle reaction role');
+      return false;
+    }
+  }
+
   private isDuplicate(
     guildId: string,
     automationId: number,
     trigger: string,
     payload: EventPayload,
   ): boolean {
-    const key = `${guildId}:${automationId}:${trigger}:${payload.message?.id ?? payload.member?.id ?? payload.channelId ?? Date.now().toString()}`;
+    const targetId =
+      payload.messageId ??
+      payload.message?.id ??
+      payload.member?.id ??
+      payload.channelId ??
+      Date.now().toString();
+    const userId = payload.user?.id ?? payload.member?.id ?? '';
+    const emojiIdent = payload.emoji?.identifier ?? payload.emoji?.name ?? '';
+    const key = `${guildId}:${automationId}:${trigger}:${targetId}:${userId}:${emojiIdent}`;
     const now = Date.now();
     const last = this.recentExecutions.get(key);
 
@@ -113,6 +213,7 @@ export class AutomationEngine {
   public matchesConditions(
     conditions: Array<{ description: string }>,
     payload: EventPayload,
+    trigger?: string,
   ): boolean {
     if (!conditions || conditions.length === 0) return true;
 
@@ -120,18 +221,22 @@ export class AutomationEngine {
       const desc = condition.description?.trim();
       if (!desc) continue;
 
-      if (!this.matchesSingleCondition(desc, payload)) {
+      if (!this.matchesSingleCondition(desc, payload, trigger)) {
         return false;
       }
     }
     return true;
   }
 
-  private matchesSingleCondition(desc: string, payload: EventPayload): boolean {
+  private matchesSingleCondition(desc: string, payload: EventPayload, trigger?: string): boolean {
     const lowerDesc = desc.toLowerCase().trim();
 
     // 1. Bot / Human status check
-    const isBotAuthor = Boolean(payload.message?.author?.bot || payload.member?.user?.bot);
+    const isReactionEvent = trigger ? trigger.startsWith('reaction_') : false;
+    const isBotAuthor = isReactionEvent
+      ? Boolean(payload.user?.bot || payload.member?.user?.bot)
+      : Boolean(payload.message?.author?.bot || payload.member?.user?.bot || payload.user?.bot);
+
     if (
       lowerDesc.includes('not a bot') ||
       lowerDesc.includes('non-bot') ||
@@ -168,7 +273,37 @@ export class AutomationEngine {
       if (!isChannelMatch) return false;
     }
 
-    // 3. Message Content checks (when payload has message content)
+    // 3. Message ID check (for reaction roles or message-specific automations)
+    const messageIdMatch = lowerDesc.match(/message(?:\s+id)?[:\s]+([0-9]{15,22})/i);
+    let msgIdChecked = false;
+    if (messageIdMatch && messageIdMatch[1]) {
+      msgIdChecked = true;
+      const targetMsgId = messageIdMatch[1];
+      const currentMsgId = payload.messageId ?? payload.message?.id;
+      if (currentMsgId !== targetMsgId) return false;
+    }
+
+    // 4. Emoji / Reaction check (for reaction roles or reaction automations)
+    const emojiMatch = lowerDesc.match(/(?:emoji|reaction|react\s+with)\s+[:\s]*([^\s,]+)/i);
+    let emojiChecked = false;
+    if (emojiMatch && emojiMatch[1]) {
+      emojiChecked = true;
+      const targetEmoji = emojiMatch[1].trim().toLowerCase();
+      const currentEmojiName = payload.emoji?.name?.toLowerCase();
+      const currentEmojiId = payload.emoji?.id?.toLowerCase();
+      const currentEmojiIdent = payload.emoji?.identifier?.toLowerCase();
+
+      const matchesEmoji =
+        currentEmojiName === targetEmoji ||
+        currentEmojiId === targetEmoji ||
+        currentEmojiIdent === targetEmoji ||
+        (currentEmojiName && targetEmoji.includes(currentEmojiName)) ||
+        (currentEmojiIdent && targetEmoji.includes(currentEmojiIdent));
+
+      if (!matchesEmoji) return false;
+    }
+
+    // 5. Message Content checks (when payload has message content)
     if (payload.message && typeof payload.message.content === 'string') {
       const msgContent = payload.message.content.trim();
       const msgLower = msgContent.toLowerCase();
@@ -245,9 +380,11 @@ export class AutomationEngine {
         }
       }
 
-      // If condition text is purely metadata (bot/channel check only), message content check is satisfied
+      // If condition text is purely metadata (bot/channel/messageId/emoji check only), message content check is satisfied
       const isMetaOnly =
         channelChecked ||
+        msgIdChecked ||
+        emojiChecked ||
         lowerDesc.includes('bot') ||
         lowerDesc.includes('human') ||
         lowerDesc.includes('channel') ||

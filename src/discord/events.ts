@@ -84,15 +84,12 @@ export function registerEvents(client: Client, handlers: DiscordHandlers): void 
     run(handlers.onEvent('thread_create', { guild: thread.guild, channelId: thread.id }), 'automation event');
   });
 
-  client.on(Events.MessageReactionAdd, (reaction) => {
-    const guild = reaction.message.guild;
-    if (!guild) return;
-    run(handlers.onEvent('reaction_add', {
-      guild,
-      member: null,
-      message: reaction.message.partial ? null : reaction.message,
-      channelId: reaction.message.channelId,
-    }), 'automation event');
+  client.on(Events.MessageReactionAdd, (reaction, user) => {
+    void handleReactionEvent('reaction_add', reaction, user, handlers);
+  });
+
+  client.on(Events.MessageReactionRemove, (reaction, user) => {
+    void handleReactionEvent('reaction_remove', reaction, user, handlers);
   });
 
   client.on(Events.VoiceStateUpdate, (oldState, newState) => {
@@ -100,3 +97,42 @@ export function registerEvents(client: Client, handlers: DiscordHandlers): void 
     run(handlers.onEvent('voice_state_update', { guild, member: newState.member, channelId: newState.channelId }), 'automation event');
   });
 }
+
+async function handleReactionEvent(
+  trigger: 'reaction_add' | 'reaction_remove',
+  reaction: import('discord.js').MessageReaction | import('discord.js').PartialMessageReaction,
+  user: import('discord.js').User | import('discord.js').PartialUser,
+  handlers: DiscordHandlers,
+): Promise<void> {
+  try {
+    if (reaction.partial) await reaction.fetch();
+    if (reaction.message.partial) await reaction.message.fetch();
+    if (user.partial) await user.fetch();
+
+    const guild = reaction.message.guild;
+    if (!guild) return;
+
+    const member =
+      guild.members.cache.get(user.id) ?? (await guild.members.fetch(user.id).catch(() => null));
+
+    const emojiName = reaction.emoji.name;
+    const emojiId = reaction.emoji.id;
+    const emojiStr = emojiName ?? emojiId ?? '';
+
+    run(
+      handlers.onEvent(trigger, {
+        guild,
+        member,
+        user: { id: user.id, bot: user.bot },
+        message: reaction.message,
+        messageId: reaction.message.id,
+        channelId: reaction.message.channelId,
+        emoji: { name: emojiName, id: emojiId, identifier: emojiStr },
+      }),
+      `automation event (${trigger})`,
+    );
+  } catch (err) {
+    getLogger().debug({ err }, `failed to process ${trigger}`);
+  }
+}
+
