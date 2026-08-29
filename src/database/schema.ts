@@ -151,4 +151,25 @@ export const migrations: Migration[] = [
       CREATE INDEX IF NOT EXISTS idx_audit_records_guild ON audit_records(guild_id);
     `,
   },
+  {
+    version: 2,
+    name: 'guild-notebook',
+    up: `
+      CREATE TABLE IF NOT EXISTS guild_notebook (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        guild_id TEXT NOT NULL,
+        category TEXT NOT NULL DEFAULT 'default',
+        key TEXT NOT NULL,
+        value TEXT NOT NULL,
+        member_id TEXT,
+        metadata TEXT NOT NULL DEFAULT '{}',
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        UNIQUE(guild_id, category, key, member_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_guild_notebook_lookup ON guild_notebook(guild_id, category, key);
+      CREATE INDEX IF NOT EXISTS idx_guild_notebook_member ON guild_notebook(guild_id, member_id);
+    `,
+  },
 ];
+

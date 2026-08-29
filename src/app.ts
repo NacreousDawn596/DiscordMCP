@@ -20,6 +20,8 @@ import {
 import type { AppConfig } from './config/env.js';
 import { openDatabase } from './database/index.js';
 import { guildRepository } from './database/repositories/guildRepository.js';
+import { notebookRepository } from './database/repositories/notebookRepository.js';
+
 import { createClient } from './discord/client.js';
 import { registerEvents, type DiscordHandlers } from './discord/events.js';
 import type { EventPayload } from './automation/engine.js';
@@ -28,6 +30,8 @@ import { scheduler } from './scheduler/scheduler.js';
 import { createLLMProvider } from './llm/factory.js';
 import { createExecutor } from './mcp/executor.js';
 import { registerAllTools } from './mcp/tools/index.js';
+import { tryFastQuery } from './discord/fastQuery.js';
+
 import { getLogger, initLogger } from './logging/logger.js';
 import { truncate } from './mcp/tools/helpers.js';
 
@@ -46,6 +50,7 @@ export class AgentApp {
   private runtime!: AgentRuntime;
   private memory!: MemoryManager;
   private pendingConfirmations = new Map<string, string>();
+  private xpCooldowns = new Map<string, number>();
 
   constructor(config: AppConfig) {
     this.config = config;
@@ -145,6 +150,13 @@ export class AgentApp {
     const text = extractRequest(message.content, botId);
     if (!text) {
       await message.reply('Yes? Mention me with a request, e.g. `@Agent organize this server`.');
+      return;
+    }
+
+    // Fast-path query interceptor (for XP, balance, level, warnings)
+    const fastResponse = tryFastQuery(message.guild.id, message.author.id, text);
+    if (fastResponse) {
+      await message.reply(fastResponse);
       return;
     }
 

@@ -36,6 +36,7 @@ export function registerEvents(client: Client, handlers: DiscordHandlers): void 
     run(handlers.onEvent('message_create', {
       guild: message.guild,
       member: message.member,
+      user: { id: message.author.id, bot: message.author.bot },
       message,
       channelId: message.channelId,
     }), 'automation event');

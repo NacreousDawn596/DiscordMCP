@@ -14,6 +14,7 @@ import { registerMemoryTools } from './memory.js';
 import { registerAutomationTools } from './automation.js';
 import { registerScheduleTools } from './schedule.js';
 import { registerServerTools } from './server.js';
+import { registerNotebookTools } from './notebook.js';
 
 let registered = false;
 
@@ -37,4 +38,6 @@ export function registerAllTools(): void {
   registerAutomationTools();
   registerScheduleTools();
   registerServerTools();
+  registerNotebookTools();
 }
+

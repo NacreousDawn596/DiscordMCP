@@ -1,4 +1,5 @@
 import { automationRepository } from '../database/repositories/automationRepository.js';
+import { notebookRepository } from '../database/repositories/notebookRepository.js';
 import { getLogger } from '../logging/logger.js';
 
 export interface EventPayload {
@@ -15,7 +16,12 @@ export interface EventPayload {
     roles?: { add(role: unknown): Promise<unknown>; remove(role: unknown): Promise<unknown> };
     user?: { bot?: boolean };
   } | null;
-  message?: { id?: string; content?: string | null; author?: { bot?: boolean } | null } | null;
+  message?: {
+    id?: string;
+    content?: string | null;
+    author?: { id?: string; bot?: boolean } | null;
+    delete?: () => Promise<unknown>;
+  } | null;
   messageId?: string | null;
   channelId?: string | null;
   channelName?: string | null;
@@ -33,9 +39,26 @@ export type AutomationRunner = (
 const DEDUP_TTL_MS = 5000;
 const CLEANUP_INTERVAL_MS = 60_000;
 
+const DEFAULT_OFFENSIVE_WORDS = [
+  'fuck',
+  'shit',
+  'bitch',
+  'asshole',
+  'bastard',
+  'cunt',
+  'dick',
+  'nigger',
+  'retard',
+  'pussy',
+  'whore',
+  'slut',
+  'scam',
+  'free nitro',
+];
+
 /**
- * Event-driven automation engine. It does NOT invoke the LLM on every event —
- * only when a configured automation's trigger and conditions match.
+ * Event-driven automation engine with broad semantic matching, word lists,
+ * offensive/toxic detection, notebook state updates, and instant fast-path actions.
  */
 export class AutomationEngine {
   private runner: AutomationRunner | null = null;
@@ -61,7 +84,6 @@ export class AutomationEngine {
 
     for (const automation of automations) {
       // Skip if the actor who triggered the event is a bot (prevents self‑loops).
-      // For reaction events, the actor is payload.user/payload.member, NOT payload.message.author (which is the message author).
       const isActorBot = isReactionEvent
         ? Boolean(payload.user?.bot || payload.member?.user?.bot)
         : Boolean(payload.message?.author?.bot || payload.member?.user?.bot || payload.user?.bot);
@@ -84,18 +106,13 @@ export class AutomationEngine {
         'automation triggered',
       );
 
-      // Fast-path execution for reaction role actions (instant role add/remove)
-      if (
-        (trigger === 'reaction_add' || trigger === 'reaction_remove') &&
-        payload.member
-      ) {
-        const handledFastRole = await this.tryExecuteReactionRole(
-          trigger,
-          action.description,
-          payload,
-        );
-        if (handledFastRole) continue;
-      }
+      // Fast-path execution for reaction roles, notebook updates, and instant moderation actions
+      const handledFastAction = await this.tryExecuteFastAction(
+        trigger,
+        action.description,
+        payload,
+      );
+      if (handledFastAction) continue;
 
       try {
         await this.runner(guildId, action.description, payload.channelId ?? null);
@@ -107,6 +124,221 @@ export class AutomationEngine {
       }
     }
   }
+
+  private async tryExecuteFastAction(
+    trigger: string,
+    actionDesc: string,
+    payload: EventPayload,
+  ): Promise<boolean> {
+    const lowerAction = actionDesc.toLowerCase().trim();
+    const guildId = payload.guild.id;
+    const memberId = payload.user?.id ?? payload.member?.id ?? null;
+
+    // 1. Reaction Role Fast Action
+    if (
+      (trigger === 'reaction_add' || trigger === 'reaction_remove') &&
+      payload.member
+    ) {
+      const handledRole = await this.tryExecuteReactionRole(trigger, actionDesc, payload);
+      if (handledRole) return true;
+    }
+
+    // 2-a. Pure xp/coins/points/level increment — e.g. "add 10 xp", "increment user's xp", "give coins"
+    // Detect any action that is PRIMARILY about incrementing notebook data (even if described verbosely)
+    // These keywords in the description signal that this is a pure notebook update
+    const isNotebookAction =
+      lowerAction.includes('increment') ||
+      lowerAction.includes('add xp') ||
+      lowerAction.includes('give xp') ||
+      lowerAction.includes('user\'s xp') ||
+      lowerAction.includes("user's xp") ||
+      lowerAction.includes('add coins') ||
+      lowerAction.includes('give coins') ||
+      lowerAction.includes('add points') ||
+      lowerAction.includes('give points') ||
+      lowerAction.includes('grant xp') ||
+      lowerAction.includes('earn xp') ||
+      lowerAction.includes('accumulate xp');
+
+    if (isNotebookAction) {
+      // Extract how much to increment
+      const amountMatch = lowerAction.match(/(?:by|of|add|give|grant)?\s*(\d+)\s*(?:xp|coins?|points?|exp)?/i);
+      const amount = amountMatch ? Number(amountMatch[1]) : 10;
+
+      // Extract which key to update
+      let key = 'xp';
+      if (/coins?/.test(lowerAction)) key = 'coins';
+      else if (/points?/.test(lowerAction)) key = 'points';
+      else if (/exp\b/.test(lowerAction)) key = 'xp';
+
+      notebookRepository.updateEntry({
+        guildId,
+        key,
+        operation: 'increment',
+        value: amount,
+        memberId,
+      });
+      getLogger().info({ guildId, key, amount, memberId }, 'fast notebook increment executed');
+      return true;
+    }
+
+    // 2-b. Level threshold check + congratulations — detect by keywords
+    // e.g. "check if new total XP crosses the threshold for the next level ... and sends a congratulatory message"
+    const isLevelCheckAction =
+      (lowerAction.includes('level') &&
+        (lowerAction.includes('threshold') ||
+          lowerAction.includes('formulat') ||
+          lowerAction.includes('level up') ||
+          lowerAction.includes('cross') ||
+          lowerAction.includes('reach') ||
+          lowerAction.includes('congratulat') ||
+          lowerAction.includes('leveling') ||
+          lowerAction.includes('levelling') ||
+          lowerAction.includes('checks')
+        )
+      );
+
+    if (isLevelCheckAction) {
+      // Run the level progression check entirely in fast-path
+      await this.tryExecuteLevelCheck(payload, actionDesc);
+      return true;
+    }
+
+    // 3. Explicit notebook set (e.g. "set notebook key to value", "set xp to 0")
+    const setMatch = lowerAction.match(/set\s+(?:notebook\s+)?([a-zA-Z0-9_-]+)\s+to\s+(-?\d+(?:\.\d+)?)/i);
+    if (setMatch && setMatch[1]) {
+      notebookRepository.setEntry({
+        guildId,
+        key: setMatch[1].toLowerCase(),
+        value: setMatch[2],
+        memberId,
+      });
+      return true;
+    }
+
+    // 4. Generic "add N <key>" or "increment <key> by N" (original simple matcher)
+    const notebookIncrementMatch = lowerAction.match(
+      /(?:add|increment|give|grant)\s+(?:(\d+)\s+)?(?:notebook\s+)?([a-zA-Z0-9_-]+)/i,
+    );
+    if (notebookIncrementMatch && notebookIncrementMatch[2]) {
+      const amount = Number(notebookIncrementMatch[1]) || 1;
+      const key = notebookIncrementMatch[2].toLowerCase();
+
+      notebookRepository.updateEntry({
+        guildId,
+        key,
+        operation: 'increment',
+        value: amount,
+        memberId,
+      });
+      getLogger().info({ guildId, key, amount, memberId }, 'fast notebook increment executed');
+      return true;
+    }
+
+    // 5. Instant Message Deletion
+    if (
+      (lowerAction.includes('delete message') || lowerAction.includes('remove message')) &&
+      payload.message &&
+      typeof payload.message.delete === 'function'
+    ) {
+      try {
+        await payload.message.delete();
+        getLogger().info({ guildId, messageId: payload.message.id }, 'fast message delete executed');
+        return true;
+      } catch (err) {
+        getLogger().warn({ err }, 'failed fast message delete');
+      }
+    }
+
+    // 6. Instant Member Warning
+    if (lowerAction.includes('warn user') || lowerAction.includes('warn member')) {
+      if (memberId) {
+        notebookRepository.updateEntry({
+          guildId,
+          category: 'moderation',
+          key: 'warnings',
+          memberId,
+          operation: 'increment',
+          value: 1,
+        });
+        getLogger().info({ guildId, memberId }, 'fast member warning recorded');
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  /**
+   * Fast-path level-up check: reads current XP from notebook, calculates the expected level
+   * using the configured formula (Level n = Level(n-1) + n*100), and if the user crossed a
+   * threshold, updates their level and sends a congratulatory channel message autonomously
+   * WITHOUT calling the LLM.
+   */
+  private async tryExecuteLevelCheck(
+    payload: EventPayload,
+    actionDesc: string,
+  ): Promise<void> {
+    const guildId = payload.guild.id;
+    const memberId = payload.user?.id ?? payload.member?.id ?? null;
+    if (!memberId) return;
+
+    const xpEntry = notebookRepository.getEntry({ guildId, key: 'xp', memberId });
+    const currentXp = xpEntry ? Number(xpEntry.value) || 0 : 0;
+
+    const levelEntry = notebookRepository.getEntry({ guildId, key: 'level', memberId });
+    const currentLevel = levelEntry ? Number(levelEntry.value) || 1 : 1;
+
+    // Compute XP required for next level: threshold(n) = sum(i*100 for i in 1..n) = n*(n+1)/50
+    // i.e., Level n requires n*(n+1)*50 total XP
+    const xpForLevel = (n: number): number => n * (n + 1) * 50;
+
+    let newLevel = currentLevel;
+    // Walk forward until XP no longer meets the next threshold
+    while (currentXp >= xpForLevel(newLevel + 1)) {
+      newLevel++;
+    }
+
+    if (newLevel <= currentLevel) return; // No level-up
+
+    // Update stored level
+    notebookRepository.setEntry({ guildId, key: 'level', value: String(newLevel), memberId });
+    getLogger().info({ guildId, memberId, oldLevel: currentLevel, newLevel }, 'fast level-up executed');
+
+    // Send congratulatory message to the channel if we have a channel
+    const channelId = payload.channelId;
+    if (!channelId) return;
+
+    try {
+      const guild = payload.guild as unknown as import('discord.js').Guild;
+      const channel = guild.channels?.cache?.get(channelId) as
+        | { send(opts: unknown): Promise<unknown> }
+        | undefined;
+
+      if (channel && 'send' in channel) {
+        const member = payload.member as unknown as import('discord.js').GuildMember | null;
+        const displayName =
+          member?.displayName ?? payload.user?.id ?? 'Member';
+        await channel.send({
+          embeds: [
+            {
+              title: '🎉 Level Up!',
+              description: `Congrats **${displayName}**! You've reached **Level ${newLevel}**!`,
+              color: 0xf1c40f,
+              fields: [
+                { name: 'Total XP', value: `${currentXp}`, inline: true },
+                { name: 'New Level', value: `${newLevel}`, inline: true },
+              ],
+              timestamp: new Date().toISOString(),
+            },
+          ],
+        });
+      }
+    } catch (err) {
+      getLogger().warn({ err, guildId }, 'failed to send level-up message');
+    }
+  }
+
 
   private async tryExecuteReactionRole(
     trigger: string,
@@ -254,7 +486,7 @@ export class AutomationEngine {
       if (!isBotAuthor) return false;
     }
 
-    // 2. Channel check (if condition specifies channel name or id)
+    // 2. Channel check
     const channelMatch = lowerDesc.match(/(?:\bin\b|\bchannel\s+(?:is\s+)?)\s*#?([a-zA-Z0-9_-]+)/i);
     let channelChecked = false;
     if (channelMatch && channelMatch[1]) {
@@ -273,7 +505,7 @@ export class AutomationEngine {
       if (!isChannelMatch) return false;
     }
 
-    // 3. Message ID check (for reaction roles or message-specific automations)
+    // 3. Message ID check
     const messageIdMatch = lowerDesc.match(/message(?:\s+id)?[:\s]+([0-9]{15,22})/i);
     let msgIdChecked = false;
     if (messageIdMatch && messageIdMatch[1]) {
@@ -283,7 +515,7 @@ export class AutomationEngine {
       if (currentMsgId !== targetMsgId) return false;
     }
 
-    // 4. Emoji / Reaction check (for reaction roles or reaction automations)
+    // 4. Emoji / Reaction check
     const emojiMatch = lowerDesc.match(/(?:emoji|reaction|react\s+with)\s+[:\s]*([^\s,]+)/i);
     let emojiChecked = false;
     if (emojiMatch && emojiMatch[1]) {
@@ -303,12 +535,92 @@ export class AutomationEngine {
       if (!matchesEmoji) return false;
     }
 
-    // 5. Message Content checks (when payload has message content)
+    // 5. Notebook State check (e.g. "notebook xp >= 100" or "coins >= 50")
+    const notebookStateMatch = lowerDesc.match(
+      /(?:notebook\s+)?([a-zA-Z0-9_-]+)\s*(>=|<=|>|<|==|=)\s*(\d+)/i,
+    );
+    if (notebookStateMatch && notebookStateMatch[1] && notebookStateMatch[3]) {
+      const key = notebookStateMatch[1].toLowerCase();
+      const op = notebookStateMatch[2];
+      const targetVal = Number(notebookStateMatch[3]);
+      const memberId = payload.user?.id ?? payload.member?.id ?? null;
+
+      const entry = notebookRepository.getEntry({
+        guildId: payload.guild.id,
+        key,
+        memberId,
+      });
+
+      const currentVal = entry ? Number(entry.value) || 0 : 0;
+
+      if (op === '>=' && !(currentVal >= targetVal)) return false;
+      if (op === '<=' && !(currentVal <= targetVal)) return false;
+      if (op === '>' && !(currentVal > targetVal)) return false;
+      if (op === '<' && !(currentVal < targetVal)) return false;
+      if ((op === '==' || op === '=') && !(currentVal === targetVal)) return false;
+    }
+
+    // 6. Message Content & Semantic Checks
     if (payload.message && typeof payload.message.content === 'string') {
       const msgContent = payload.message.content.trim();
       const msgLower = msgContent.toLowerCase();
 
-      // Check for quoted strings (e.g. "message content is '!fact'" or 'when user types "!fact"')
+      // Offensive / Toxic Content Detection
+      if (
+        lowerDesc.includes('is offensive') ||
+        lowerDesc.includes('contains offensive') ||
+        lowerDesc.includes('is toxic') ||
+        lowerDesc.includes('is profanity') ||
+        lowerDesc.includes('is inappropriate') ||
+        lowerDesc.includes('is bad word')
+      ) {
+        const isOffensive = DEFAULT_OFFENSIVE_WORDS.some((word) => msgLower.includes(word));
+        if (!isOffensive) return false;
+        return true;
+      }
+
+      // Spam / Link Detection
+      if (lowerDesc.includes('is spam') || lowerDesc.includes('is scam')) {
+        const isSpam =
+          msgLower.includes('free nitro') ||
+          msgLower.includes('steamgift') ||
+          msgLower.includes('discord.gg/') ||
+          /(http|https):\/\/[^\s]+/i.test(msgContent);
+        if (!isSpam) return false;
+        return true;
+      }
+
+      if (lowerDesc.includes('contains link') || lowerDesc.includes('contains invite')) {
+        const hasLink = /(http|https):\/\/[^\s]+/i.test(msgContent) || msgLower.includes('discord.gg/');
+        if (!hasLink) return false;
+        return true;
+      }
+
+      // Question detection
+      if (lowerDesc.includes('is a question') || lowerDesc.includes('asks a question')) {
+        const isQuestion =
+          msgContent.endsWith('?') ||
+          /^(how|what|why|where|when|who|can|is|are|do|does)\b/i.test(msgContent);
+        if (!isQuestion) return false;
+        return true;
+      }
+
+      // Word list matching (e.g. "contains any of [foo, bar, baz]" or "contains words foo, bar")
+      const wordListMatch = desc.match(/(?:contains|includes)\s+(?:any\s+of\s+)?(?:words\s+)?\[?([a-zA-Z0-9_\s,-]+)\]?/i);
+      if (wordListMatch && wordListMatch[1]) {
+        const words = wordListMatch[1]
+          .split(/[\s,]+/)
+          .map((w) => w.trim().toLowerCase())
+          .filter((w) => w.length > 0 && w !== 'any' && w !== 'of' && w !== 'words');
+
+        if (words.length > 0) {
+          const matchedAny = words.some((w) => msgLower.includes(w));
+          if (!matchedAny) return false;
+          return true;
+        }
+      }
+
+      // Quoted string matching
       const quotes = Array.from(desc.matchAll(/["'`]([^"'`]+)["'`]/g)).map((m) => m[1]!);
       if (quotes.length > 0) {
         for (const q of quotes) {
@@ -330,7 +642,7 @@ export class AutomationEngine {
         return true;
       }
 
-      // Check for command tokens starting with !, /, $, ., or ? (e.g., !fact, /help, $price)
+      // Command tokens starting with !, /, $, ., or ?
       const commandTokens = Array.from(desc.matchAll(/([!/$.?][a-zA-Z0-9_-]+)/g)).map((m) => m[1]!);
       if (commandTokens.length > 0) {
         for (const token of commandTokens) {
@@ -346,41 +658,27 @@ export class AutomationEngine {
         return true;
       }
 
-      // Explicit keywords without quotes:
-      // "starts with <text>" or "prefix <text>"
+      // Keyword matches without quotes
       const startsWithMatch = desc.match(/(?:starts\s+with|prefix)\s+([^\s,]+)/i);
       if (startsWithMatch && startsWithMatch[1]) {
         return msgLower.startsWith(startsWithMatch[1].toLowerCase());
       }
 
-      // "ends with <text>"
       const endsWithMatch = desc.match(/ends\s+with\s+([^\s,]+)/i);
       if (endsWithMatch && endsWithMatch[1]) {
         return msgLower.endsWith(endsWithMatch[1].toLowerCase());
       }
 
-      // "message is <text>", "content is <text>", "equals <text>"
       const equalsMatch = desc.match(/(?:message|content)\s+(?:is|equals)\s+([^\s,]+)/i);
       if (equalsMatch && equalsMatch[1]) {
         return msgLower === equalsMatch[1].toLowerCase();
       }
 
-      // "contains <text>" or "includes <text>"
       const containsMatch = desc.match(/(?:contains|includes)\s+([^\s,]+)/i);
       if (containsMatch && containsMatch[1]) {
         return msgLower.includes(containsMatch[1].toLowerCase());
       }
 
-      // Check if description specifies a trigger phrase requirement (e.g. "when user types hello")
-      const triggerPhraseMatch = desc.match(/(?:when|if)\s+(?:someone|user|person|a user)?\s*(?:sends|types|says)\s+(.+)/i);
-      if (triggerPhraseMatch && triggerPhraseMatch[1]) {
-        const phrase = triggerPhraseMatch[1].replace(/message|content/gi, '').trim().toLowerCase();
-        if (phrase.length > 0) {
-          return msgLower.includes(phrase) || msgLower.startsWith(phrase);
-        }
-      }
-
-      // If condition text is purely metadata (bot/channel/messageId/emoji check only), message content check is satisfied
       const isMetaOnly =
         channelChecked ||
         msgIdChecked ||
@@ -393,7 +691,6 @@ export class AutomationEngine {
         return true;
       }
 
-      // Fallback for short direct condition descriptions (e.g., desc = "hello world")
       return msgLower.startsWith(lowerDesc) || msgLower.includes(lowerDesc);
     }
 
@@ -409,7 +706,6 @@ export class AutomationEngine {
         }
       }
     }, CLEANUP_INTERVAL_MS);
-    // Prevent the timer from keeping the process alive
     this.cleanupTimer.unref?.();
   }
 
