@@ -2,6 +2,9 @@ import {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
+  ModalBuilder,
+  TextInputBuilder,
+  TextInputStyle,
   type Client,
   type Guild,
   type GuildChannel,
@@ -31,6 +34,7 @@ import { createLLMProvider } from './llm/factory.js';
 import { createExecutor } from './mcp/executor.js';
 import { registerAllTools } from './mcp/tools/index.js';
 import { tryFastQuery } from './discord/fastQuery.js';
+import { getButtonAction, getModalConfig } from './mcp/tools/components.js';
 
 import { getLogger, initLogger } from './logging/logger.js';
 import { truncate } from './mcp/tools/helpers.js';
@@ -226,8 +230,86 @@ export class AgentApp {
     const botId = this.client.user!.id;
     const botTag = this.client.user!.tag;
 
+    // -------------------------------------------------------------------------
+    // 1. Button click interactions
+    // -------------------------------------------------------------------------
     if (interaction.isButton()) {
-      const [scope, verb, runId] = interaction.customId.split(':');
+      const customId = interaction.customId;
+
+      // Agent confirm/cancel buttons (pre-existing)
+      if (customId.startsWith('agent:')) {
+        const [, verb, runId] = customId.split(':');
+        if (!runId) return;
+        const approved = verb === 'confirm';
+        const ctx = contextFromInteraction(interaction, botId, botTag);
+        await interaction.deferUpdate();
+        const outcome = await this.runtime.resume(ctx, runId, approved);
+        await interaction
+          .editReply({ content: nonEmpty(outcome.response), components: [] })
+          .catch(() => undefined);
+        return;
+      }
+
+      // Bot component buttons (registered via discord.message.send_with_buttons)
+      if (customId.startsWith('bot:')) {
+        const bareId = customId.slice(4);
+        const guildId = interaction.guildId;
+        if (!guildId) return;
+
+        const action = getButtonAction(guildId, bareId);
+        if (!action) {
+          await interaction.reply({ content: 'This button has no registered action.', ephemeral: true }).catch(() => undefined);
+          return;
+        }
+
+        // Open a modal if the action is "open_modal:<modalId>"
+        if (action.startsWith('open_modal:')) {
+          const modalId = action.slice(11);
+          const config = getModalConfig(guildId, modalId);
+          if (!config) {
+            await interaction.reply({ content: 'Modal not found.', ephemeral: true }).catch(() => undefined);
+            return;
+          }
+
+          const modal = new ModalBuilder()
+            .setCustomId(`modal:${modalId}`)
+            .setTitle(config.title);
+
+          for (const field of config.fields) {
+            const style =
+              field.style === 'paragraph' || field.style === 'long'
+                ? TextInputStyle.Paragraph
+                : TextInputStyle.Short;
+            const input = new TextInputBuilder()
+              .setCustomId(field.id)
+              .setLabel(field.label)
+              .setStyle(style)
+              .setRequired(field.required);
+            if (field.placeholder) input.setPlaceholder(field.placeholder);
+            if (field.min) input.setMinLength(field.min);
+            if (field.max) input.setMaxLength(field.max);
+            modal.addComponents(new ActionRowBuilder<TextInputBuilder>().addComponents(input));
+          }
+
+          await interaction.showModal(modal).catch(() => undefined);
+          return;
+        }
+
+        // Run the stored action via the agent runtime
+        await interaction.deferReply({ ephemeral: true }).catch(() => undefined);
+        const ctx = contextFromInteraction(interaction, botId, botTag);
+        const mode = detectMode(action);
+        try {
+          const outcome = await this.runtime.run(ctx, action, mode);
+          await interaction.editReply(nonEmpty(outcome.response)).catch(() => undefined);
+        } catch {
+          await interaction.editReply('Something went wrong processing this button action.').catch(() => undefined);
+        }
+        return;
+      }
+
+      // Fallback for unknown button IDs
+      const [scope, verb, runId] = customId.split(':');
       if (scope !== 'agent' || !runId) return;
       const approved = verb === 'confirm';
       const ctx = contextFromInteraction(interaction, botId, botTag);
@@ -239,6 +321,55 @@ export class AgentApp {
       return;
     }
 
+    // -------------------------------------------------------------------------
+    // 2. Modal (form) submissions
+    // -------------------------------------------------------------------------
+    if (interaction.isModalSubmit()) {
+      const modalCustomId = interaction.customId;
+      if (!modalCustomId.startsWith('modal:')) return;
+
+      const modalId = modalCustomId.slice(6);
+      const guildId = interaction.guildId;
+      if (!guildId) return;
+
+      const config = getModalConfig(guildId, modalId);
+      await interaction.deferReply({ ephemeral: true }).catch(() => undefined);
+
+      // Collect field values
+      const fields: Record<string, string> = {};
+      for (const row of interaction.components) {
+        if (row.type !== 1) continue;
+        for (const comp of row.components) {
+          // ModalSubmitInteraction rows always contain TextInputModalData
+          const c = comp as { customId?: string; value?: string };
+          if (c.customId !== undefined && c.value !== undefined) {
+            fields[c.customId] = String(c.value);
+          }
+        }
+      }
+
+      const submissionSummary = Object.entries(fields)
+        .map(([k, v]) => `${k}: ${v}`)
+        .join(', ');
+
+      const action = config?.action
+        ? `${config.action}. User submitted form "${modalId}" with: ${submissionSummary}`
+        : `Process form submission from modal "${modalId}" with fields: ${submissionSummary}`;
+
+      const ctx = contextFromInteraction(interaction, botId, botTag);
+      const mode = detectMode(action);
+      try {
+        const outcome = await this.runtime.run(ctx, action, mode);
+        await interaction.editReply(nonEmpty(outcome.response)).catch(() => undefined);
+      } catch {
+        await interaction.editReply('Your form was received but something went wrong processing it.').catch(() => undefined);
+      }
+      return;
+    }
+
+    // -------------------------------------------------------------------------
+    // 3. Slash commands (/agent)
+    // -------------------------------------------------------------------------
     if (interaction.isChatInputCommand() && interaction.commandName === 'agent') {
       const text = interaction.options.getString('message', false);
       if (!text) {

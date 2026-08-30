@@ -233,26 +233,33 @@ export function registerMessageTools(): void {
 
   registerTool({
     name: 'discord.message.delete',
-    description: 'Delete a message by id.',
+    description: 'Delete a message by id. channel is optional — if omitted, the current channel is used.',
     inputSchema: {
       type: 'object',
       properties: {
-        channel: { type: 'string' },
-        message_id: { type: 'string' },
+        channel: { type: 'string', description: 'Channel name/id. Defaults to the current channel.' },
+        message_id: { type: 'string', description: 'ID of the message to delete.' },
       },
-      required: ['channel', 'message_id'],
+      required: ['message_id'],
     },
     risk: 'HIGH',
     capability: 'MANAGE_MESSAGES',
     mutates: true,
     async execute(ctx, args) {
-      const channel = findChannel(ctx.guild, args.channel as string);
+      const channel = args.channel
+        ? findChannel(ctx.guild, args.channel as string)
+        : (ctx.channel as typeof ctx.channel & { messages?: unknown }) ?? null;
       if (!channel || !('messages' in channel)) return fail('Channel not found or not text-based.');
-      const msg = await (channel as unknown as {
-        messages: { fetch: (id: string) => Promise<{ delete(): Promise<unknown> }> };
-      }).messages.fetch(String(args.message_id));
-      await msg.delete();
-      return ok('Message deleted.');
+      try {
+        const msg = await (channel as unknown as {
+          messages: { fetch: (id: string) => Promise<{ delete(): Promise<unknown> }> };
+        }).messages.fetch(String(args.message_id));
+        await msg.delete();
+        return ok(`Message ${args.message_id} deleted.`);
+      } catch (e: unknown) {
+        const msg = e instanceof Error ? e.message : String(e);
+        return fail(`Failed to delete message: ${msg}`);
+      }
     },
   });
 

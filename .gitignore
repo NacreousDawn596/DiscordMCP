@@ -10,3 +10,5 @@ coverage/
 .DS_Store
 .env1
 .opencode/
+marks.ipynb
+.env2

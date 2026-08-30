@@ -15,6 +15,7 @@ import { registerAutomationTools } from './automation.js';
 import { registerScheduleTools } from './schedule.js';
 import { registerServerTools } from './server.js';
 import { registerNotebookTools } from './notebook.js';
+import { registerComponentTools } from './components.js';
 
 let registered = false;
 
@@ -39,5 +40,6 @@ export function registerAllTools(): void {
   registerScheduleTools();
   registerServerTools();
   registerNotebookTools();
+  registerComponentTools();
 }
 
