@@ -20,3 +20,17 @@ describe('config trust', () => {
     expect(BUILT_IN_TRUSTED_USER_IDS).toContain('778627103578783776');
   });
 });
+
+describe('config economy', () => {
+  it('defaults XP to disabled', () => {
+    const config = loadConfig({});
+    expect(config.economy.xpPerMessage).toBe(0);
+    expect(config.economy.xpCooldownSeconds).toBe(60);
+  });
+
+  it('parses XP per message and cooldown from env', () => {
+    const config = loadConfig({ XP_PER_MESSAGE: '10', XP_COOLDOWN_SECONDS: '30' });
+    expect(config.economy.xpPerMessage).toBe(10);
+    expect(config.economy.xpCooldownSeconds).toBe(30);
+  });
+});

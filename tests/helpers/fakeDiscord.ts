@@ -202,6 +202,7 @@ export function makeTestConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     features: { moderation: false, automations: true, scheduler: false, slashCommands: false },
     trust: { allowedUserIds: [] },
     limits: { messageRetentionDays: 30, rateLimitMaxConcurrent: 5, cacheTtlSeconds: 300, contextHistoryLimit: 50 },
+    economy: { xpPerMessage: 0, xpCooldownSeconds: 60 },
     ...overrides,
   };
 }

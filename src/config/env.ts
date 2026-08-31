@@ -82,6 +82,10 @@ const envSchema = z.object({
   RATE_LIMIT_MAX_CONCURRENT: z.coerce.number().int().positive().optional().default(5),
   CACHE_TTL_SECONDS: z.coerce.number().int().positive().optional().default(300),
   CONTEXT_HISTORY_LIMIT: z.coerce.number().int().positive().optional().default(50),
+
+  // Economy / XP
+  XP_PER_MESSAGE: z.coerce.number().int().nonnegative().optional().default(0),
+  XP_COOLDOWN_SECONDS: z.coerce.number().int().positive().optional().default(60),
 });
 
 export type Env = z.infer<typeof envSchema>;
@@ -129,6 +133,10 @@ export interface AppConfig {
     rateLimitMaxConcurrent: number;
     cacheTtlSeconds: number;
     contextHistoryLimit: number;
+  };
+  economy: {
+    xpPerMessage: number;
+    xpCooldownSeconds: number;
   };
 }
 
@@ -184,6 +192,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
       rateLimitMaxConcurrent: parsed.RATE_LIMIT_MAX_CONCURRENT,
       cacheTtlSeconds: parsed.CACHE_TTL_SECONDS,
       contextHistoryLimit: parsed.CONTEXT_HISTORY_LIMIT,
+    },
+    economy: {
+      xpPerMessage: parsed.XP_PER_MESSAGE,
+      xpCooldownSeconds: parsed.XP_COOLDOWN_SECONDS,
     },
   };
 }

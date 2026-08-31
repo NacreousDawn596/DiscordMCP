@@ -59,6 +59,15 @@ export class AgentApp {
   constructor(config: AppConfig) {
     this.config = config;
     this.client = createClient(config);
+
+    // Periodically prune stale XP cooldown entries so the map stays bounded.
+    const cleanup = setInterval(() => {
+      const cutoff = Date.now() - 60 * 60 * 1000;
+      for (const [key, ts] of this.xpCooldowns) {
+        if (ts < cutoff) this.xpCooldowns.delete(key);
+      }
+    }, 60 * 60 * 1000);
+    cleanup.unref?.();
   }
 
   async start(): Promise<void> {
@@ -130,6 +139,9 @@ export class AgentApp {
     const botId = this.client.user!.id;
     const botTag = this.client.user!.tag;
 
+    // Award passive XP for activity (throttled per member via cooldown).
+    await this.maybeAwardXp(message);
+
     // Confirmation replies (may or may not mention the bot).
     const pendingKey = `${message.channelId}:${message.author.id}`;
     const pendingRunId = this.pendingConfirmations.get(pendingKey);
@@ -170,13 +182,43 @@ export class AgentApp {
     await this.runAndReply(ctx, text, mode, message);
   }
 
+  /**
+   * Awards passive XP for message activity, throttled per member via a cooldown
+   * window so XP farming / spam doesn't inflate the notebook economy.
+   * Disabled entirely when XP_PER_MESSAGE is 0.
+   */
+  private async maybeAwardXp(message: Message): Promise<void> {
+    const { xpPerMessage, xpCooldownSeconds } = this.config.economy;
+    if (xpPerMessage <= 0) return;
+    if (!message.guild) return;
+
+    const guildId = message.guild.id;
+    const key = `${guildId}:${message.author.id}`;
+    const now = Date.now();
+    const last = this.xpCooldowns.get(key);
+    if (last && now - last < xpCooldownSeconds * 1000) return;
+
+    this.xpCooldowns.set(key, now);
+
+    try {
+      notebookRepository.updateEntry({
+        guildId,
+        key: 'xp',
+        memberId: message.author.id,
+        operation: 'increment',
+        value: xpPerMessage,
+      });
+    } catch (err) {
+      getLogger().error({ err, guildId }, 'failed to award XP');
+    }
+  }
+
   private async runAndReply(
     ctx: Parameters<AgentRuntime['run']>[0],
     text: string,
     mode: RuntimeMode,
     message: Message,
-  ): Promise<void> {
-    const channel = ctx.channel;
+  ): Promise<void> {    const channel = ctx.channel;
     if (channel && 'sendTyping' in channel) {
       await (channel as unknown as { sendTyping: () => Promise<unknown> })
         .sendTyping()
