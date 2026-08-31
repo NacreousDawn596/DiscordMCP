@@ -246,6 +246,8 @@ Reacting adds the role; removing the reaction takes it away. Handled instantly
 | `@Agent hit @Bob` | Sends a punch/slap GIF + a funny caption. |
 | `@Agent hug me` | Sends a hug GIF. |
 | `@Agent send a wave gif in #general` | Sends a wave GIF to that channel. |
+| `@Agent send me a neko image` | Sends a nekos.best neko image. |
+| `@Agent show me a waifu` | Sends a waifu image. |
 | `@Agent what emojis does this server have?` | Lists custom emojis as `<:name:id>`. |
 | `@Agent react with the server's hype emoji` | Resolves an emoji to its tag. |
 | `@Agent send the "pog" sticker` | Sends a server sticker. |

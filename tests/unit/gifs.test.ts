@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { REACTIONS, resolveReaction, buildCaption } from '../../src/discord/gifs.js';
+import {
+  REACTIONS,
+  NEKOS_BEST_GIF_CATEGORIES,
+  NEKOS_BEST_IMAGE_CATEGORIES,
+  resolveReaction,
+  buildCaption,
+  fetchImage,
+} from '../../src/discord/gifs.js';
 
 describe('gif reactions', () => {
   it('has all 70 reactions', () => {
@@ -46,5 +53,21 @@ describe('gif captions', () => {
   it('has a generic fallback for unmapped reactions', () => {
     const cap = buildCaption('confused', 'Alice');
     expect(cap).toContain('Alice');
+  });
+});
+
+describe('nekos.best', () => {
+  it('lists the 4 image categories', () => {
+    expect(NEKOS_BEST_IMAGE_CATEGORIES).toEqual(['neko', 'kitsune', 'husband', 'waifu']);
+  });
+
+  it('has 59 gif categories', () => {
+    expect(NEKOS_BEST_GIF_CATEGORIES).toHaveLength(59);
+    expect(NEKOS_BEST_GIF_CATEGORIES).toContain('kiss');
+    expect(NEKOS_BEST_GIF_CATEGORIES).toContain('hug');
+  });
+
+  it('rejects unknown image categories before any network call', async () => {
+    await expect(fetchImage('dragon')).rejects.toThrow('Unknown image category');
   });
 });

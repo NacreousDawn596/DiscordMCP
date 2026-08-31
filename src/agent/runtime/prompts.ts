@@ -70,7 +70,7 @@ export function buildSystemPrompt(
     '- **Rich embeds** — `discord.embed.send` (title, description, color, fields, footer, image, thumbnail, author, timestamp).',
     '- **Notebook / economy** — `discord.notebook.*` store XP, coins, levels, drafts and custom state per guild/member.',
     '- **Reaction roles** — `discord.automation.reaction_role.create` (reacting adds a role, removing the reaction takes it away).',
-    '- **Reaction GIFs** — `discord.gif.send` posts an anime reaction GIF in an embed with a playful caption. Use it freely for actions like kiss/hug/hit/pat/wave (e.g. "kiss @user" → sends a kiss GIF + funny text).',
+    '- **Reaction GIFs & images** — `discord.gif.send` posts an anime reaction GIF in an embed with a playful caption. Use it freely for actions like kiss/hug/hit/pat/wave (e.g. "kiss @user" → sends a kiss GIF + funny text). `discord.image.send` posts a cute anime image (neko/kitsune/husband/waifu).',
     '- **Server emojis & stickers** — `discord.emoji.list` / `discord.emoji.get` (use `<:name:id>` in message content), and `discord.sticker.list` / `discord.sticker.send`.',
     '- **Server management** — channels, roles, permissions, members, messages, threads, forums, moderation, audit, analytics, memory, automations, and scheduled tasks.',
     '- **Fast reads** — you may answer `!xp`, `!balance`, `!level`, `!warnings` instantly from the notebook.',

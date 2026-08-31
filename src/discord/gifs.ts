@@ -77,6 +77,93 @@ const INTENT_MAP: Record<string, string[]> = {
   dance2: ['dance', 'headbang'],
 };
 
+/**
+ * nekos.best — a second source with more reaction GIFs plus 4 image categories.
+ *   GET https://nekos.best/api/v2/<category>  → { results: [{ url, ... }] }
+ */
+export const NEKOS_BEST_GIF_CATEGORIES: readonly string[] = [
+  'angry', 'baka', 'bite', 'bleh', 'blowkiss', 'blush', 'bonk', 'bored',
+  'carry', 'clap', 'confused', 'cry', 'cuddle', 'dance', 'facepalm', 'feed',
+  'handhold', 'handshake', 'happy', 'highfive', 'hug', 'kabedon', 'kick',
+  'kiss', 'lappillow', 'laugh', 'lurk', 'nod', 'nom', 'nope', 'nya', 'pat',
+  'peck', 'poke', 'pout', 'punch', 'run', 'salute', 'shake', 'shoot',
+  'shocked', 'shrug', 'sip', 'slap', 'sleep', 'smile', 'smug', 'spin',
+  'stare', 'tableflip', 'teehee', 'think', 'thumbsup', 'tickle', 'wag',
+  'wave', 'wink', 'yawn', 'yeet',
+];
+
+export const NEKOS_BEST_IMAGE_CATEGORIES: readonly string[] = ['neko', 'kitsune', 'husband', 'waifu'];
+
+const NEKOS_BEST_API = 'https://nekos.best/api/v2';
+
+/**
+ * Maps an otakugifs reaction name to the closest nekos.best category, where one
+ * exists. Reactions without a mapping fall back to otakugifs.
+ */
+const NEKOS_BEST_MAP: Record<string, string> = {
+  airkiss: 'blowkiss',
+  angrystare: 'angry',
+  bite: 'bite',
+  bleh: 'bleh',
+  blush: 'blush',
+  brofist: 'highfive',
+  celebrate: 'happy',
+  cheers: 'clap',
+  clap: 'clap',
+  confused: 'confused',
+  cool: 'smug',
+  cry: 'cry',
+  cuddle: 'cuddle',
+  dance: 'dance',
+  drool: 'nom',
+  evillaugh: 'laugh',
+  facepalm: 'facepalm',
+  handhold: 'handhold',
+  happy: 'happy',
+  hug: 'hug',
+  huh: 'confused',
+  kiss: 'kiss',
+  laugh: 'laugh',
+  love: 'blush',
+  mad: 'angry',
+  nervous: 'shocked',
+  no: 'nope',
+  nom: 'nom',
+  nuzzle: 'cuddle',
+  nyah: 'nya',
+  pat: 'pat',
+  peek: 'lurk',
+  pinch: 'poke',
+  poke: 'poke',
+  pout: 'pout',
+  punch: 'punch',
+  run: 'run',
+  sad: 'cry',
+  scared: 'shocked',
+  shrug: 'shrug',
+  shy: 'blush',
+  sigh: 'shrug',
+  sip: 'sip',
+  slap: 'slap',
+  sleep: 'sleep',
+  slowclap: 'clap',
+  smack: 'slap',
+  smile: 'smile',
+  smug: 'smug',
+  stare: 'stare',
+  stop: 'nope',
+  surprised: 'shocked',
+  thumbsup: 'thumbsup',
+  tickle: 'tickle',
+  tired: 'yawn',
+  wave: 'wave',
+  wink: 'wink',
+  woah: 'shocked',
+  yawn: 'yawn',
+  yay: 'happy',
+  yes: 'nod',
+};
+
 const DEFAULT_API = 'https://api.otakugifs.xyz/gif';
 
 export function apiBaseUrl(): string {
@@ -121,6 +208,77 @@ export async function fetchGif(reaction: string): Promise<GifFetchResult> {
     throw new Error('GIF API returned no url');
   }
   return { reaction: resolved, url: data.url };
+}
+
+export interface NekosBestResult {
+  category: string;
+  url: string;
+  isImage: boolean;
+}
+
+/**
+ * nekos.best requires a `User-Agent` header in the format
+ * `APP_NAME (CONTACT_INFO)`. Override via NEKOS_BEST_USER_AGENT.
+ */
+function nekosBestUserAgent(): string {
+  return (
+    process.env.NEKOS_BEST_USER_AGENT ??
+    'DiscordAgent (https://github.com/NacreousDawn596/DiscordMCP)'
+  );
+}
+
+/** Fetches a (random) result from nekos.best for a GIF or image category. */
+export async function fetchNekosBest(category: string): Promise<NekosBestResult> {
+  const url = `${NEKOS_BEST_API}/${encodeURIComponent(category)}`;
+
+  const res = await fetch(url, {
+    headers: { 'User-Agent': nekosBestUserAgent() },
+  });
+  if (!res.ok) {
+    throw new Error(`nekos.best request failed (${res.status})`);
+  }
+  const data = (await res.json()) as { results?: Array<{ url?: string }> };
+  const first = data.results?.[0];
+  if (!first?.url) {
+    throw new Error('nekos.best returned no result');
+  }
+  return { category, url: first.url, isImage: NEKOS_BEST_IMAGE_CATEGORIES.includes(category) };
+}
+
+export interface ReactionGif {
+  /** Canonical reaction name (used for captioning). */
+  reaction: string;
+  url: string;
+  source: 'nekos_best' | 'otakugifs';
+}
+
+/**
+ * Unified reaction-GIF fetcher: prefers nekos.best (richer category coverage)
+ * and falls back to otakugifs for reactions it doesn't have.
+ */
+export async function fetchReactionGif(input: string): Promise<ReactionGif> {
+  const resolved = resolveReaction(input);
+  const nekoCategory = NEKOS_BEST_MAP[resolved];
+  if (nekoCategory) {
+    try {
+      const r = await fetchNekosBest(nekoCategory);
+      return { reaction: resolved, url: r.url, source: 'nekos_best' };
+    } catch {
+      // fall through to otakugifs
+    }
+  }
+  const r = await fetchGif(resolved);
+  return { reaction: resolved, url: r.url, source: 'otakugifs' };
+}
+
+/** Fetches a nekos.best image (neko / kitsune / husband / waifu). */
+export async function fetchImage(category: string): Promise<{ category: string; url: string }> {
+  const c = category.toLowerCase().trim();
+  if (!(NEKOS_BEST_IMAGE_CATEGORIES as string[]).includes(c)) {
+    throw new Error(`Unknown image category "${category}". Use: ${NEKOS_BEST_IMAGE_CATEGORIES.join(', ')}.`);
+  }
+  const r = await fetchNekosBest(c);
+  return { category: c, url: r.url };
 }
 
 function stripMention(raw: string): string {

@@ -440,13 +440,20 @@ call. Also expressible as a general automation with an action like
 
 ## 15. Reaction GIFs, emojis & stickers
 
-- **Reaction GIFs** (`src/discord/gifs.ts`) — powered by the OtakuGIFs API
-  (`https://api.otakugifs.xyz/gif?reaction=<name>&format=gif`, no key required).
+- **Reaction GIFs** (`src/discord/gifs.ts`) — two sources, tried in order:
+  1. **nekos.best** (primary — 59 GIF reactions + 4 images): `GET https://nekos.best/api/v2/<category>`.
+     Requires a `User-Agent` header of the form `APP_NAME (CONTACT_INFO)` — set via
+     `NEKOS_BEST_USER_AGENT` (defaults to the repo URL).
+  2. **OtakuGIFs** (fallback — 70 reactions): `GET https://api.otakugifs.xyz/gif?reaction=<name>&format=gif` (no key).
+
   `discord.gif.get` returns a URL; `discord.gif.send` posts the GIF in an embed
   with a playful, auto-generated caption (e.g. *"Alice punched Bob so hard they
   flew across the room!"*). Free-form intents ("hit", "give a kiss") are mapped
-  to one of 70 reactions. Optional `GIF_API_BASE_URL` env var overrides the
+  to a concrete reaction. Optional `GIF_API_BASE_URL` overrides the OtakuGIFs
   endpoint.
+
+- **Images** — `discord.image.send` posts a nekos.best image (`neko`, `kitsune`,
+  `husband`, or `waifu`).
 
 Tools:
 
@@ -454,6 +461,7 @@ Tools:
 | --- | --- | --- |
 | `discord.gif.get` | READ | Resolve an intent/reaction to a GIF URL. |
 | `discord.gif.send` | LOW | Post a reaction GIF embed + caption. |
+| `discord.image.send` | LOW | Post a nekos.best image (neko/kitsune/husband/waifu). |
 | `discord.emoji.list` | READ | List server emojis as `<:name:id>` / `<a:name:id>`. |
 | `discord.emoji.get` | READ | Resolve an emoji by name/id to its tag. |
 | `discord.sticker.list` | READ | List server stickers. |

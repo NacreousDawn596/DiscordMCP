@@ -1,7 +1,13 @@
 import { EmbedBuilder } from 'discord.js';
 import { registerTool } from '../registry.js';
 import { ok, fail, findChannel } from './helpers.js';
-import { REACTIONS, fetchGif, buildCaption, resolveReaction } from '../../discord/gifs.js';
+import {
+  REACTIONS,
+  NEKOS_BEST_IMAGE_CATEGORIES,
+  fetchReactionGif,
+  fetchImage,
+  buildCaption,
+} from '../../discord/gifs.js';
 
 export function registerGifTools(): void {
   registerTool({
@@ -22,8 +28,8 @@ export function registerGifTools(): void {
     mutates: false,
     async execute(_ctx, args) {
       try {
-        const result = await fetchGif(String(args.reaction));
-        return ok(`GIF for "${result.reaction}": ${result.url}`, result);
+        const result = await fetchReactionGif(String(args.reaction));
+        return ok(`GIF for "${result.reaction}" [${result.source}]: ${result.url}`, result);
       } catch (err) {
         return fail((err as Error).message);
       }
@@ -62,7 +68,7 @@ export function registerGifTools(): void {
     async execute(ctx, args) {
       let result;
       try {
-        result = await fetchGif(String(args.reaction));
+        result = await fetchReactionGif(String(args.reaction));
       } catch (err) {
         return fail((err as Error).message);
       }
@@ -87,7 +93,52 @@ export function registerGifTools(): void {
       };
       const msg = await textChannel.send({ content: caption, embeds: [embed] });
 
-      return ok(`Sent "${result.reaction}" GIF.`, { messageId: msg.id, reaction: result.reaction, url: result.url });
+      return ok(`Sent "${result.reaction}" GIF.`, { messageId: msg.id, reaction: result.reaction, url: result.url, source: result.source });
+    },
+  });
+
+  registerTool({
+    name: 'discord.image.send',
+    description:
+      'Send a cute anime image (neko, kitsune, husband, or waifu) in an embed. Use when a user asks for a neko/waifu/kitsune image.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        category: {
+          type: 'string',
+          enum: [...NEKOS_BEST_IMAGE_CATEGORIES],
+          description: 'Image category.',
+        },
+        channel: {
+          type: 'string',
+          description: 'Target channel name/id (defaults to the current channel).',
+        },
+      },
+      required: ['category'],
+    },
+    risk: 'LOW',
+    capability: 'SEND_MESSAGES',
+    mutates: true,
+    async execute(ctx, args) {
+      let img;
+      try {
+        img = await fetchImage(String(args.category));
+      } catch (err) {
+        return fail((err as Error).message);
+      }
+
+      const channel = args.channel
+        ? findChannel(ctx.guild, args.channel as string)
+        : ctx.channel ?? (ctx.guild as never);
+      if (!channel || !('send' in channel)) return fail('Cannot send to this channel.');
+
+      const embed = new EmbedBuilder().setImage(img.url).setColor(0x5865f2);
+      const textChannel = channel as unknown as {
+        send(o: { embeds?: EmbedBuilder[] }): Promise<{ id: string }>;
+      };
+      const msg = await textChannel.send({ embeds: [embed] });
+
+      return ok(`Sent ${img.category} image.`, { messageId: msg.id, category: img.category, url: img.url });
     },
   });
 }
