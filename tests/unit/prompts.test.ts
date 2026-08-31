@@ -62,3 +62,19 @@ describe('system prompt honorifics', () => {
     expect(prompt).not.toContain('ALWAYS be addressed');
   });
 });
+
+describe('system prompt capabilities', () => {
+  it('exposes interactive component tools (buttons, modals, embeds) to the LLM', () => {
+    const prompt = buildSystemPrompt(makeCtx(undefined), makeTestConfig(), makeGuildConfig(), 'normal');
+    expect(prompt).toContain('discord.message.send_with_buttons');
+    expect(prompt).toContain('discord.form.register');
+    expect(prompt).toContain('discord.button.register_action');
+    expect(prompt).toContain('discord.embed.send');
+  });
+
+  it('exposes notebook/economy and reaction-role capabilities', () => {
+    const prompt = buildSystemPrompt(makeCtx(undefined), makeTestConfig(), makeGuildConfig(), 'normal');
+    expect(prompt).toContain('discord.notebook.*');
+    expect(prompt).toContain('discord.automation.reaction_role.create');
+  });
+});
