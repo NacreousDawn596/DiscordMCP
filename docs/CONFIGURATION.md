@@ -438,7 +438,33 @@ call. Also expressible as a general automation with an action like
 
 ---
 
-## 15. System prompt
+## 15. Reaction GIFs, emojis & stickers
+
+- **Reaction GIFs** (`src/discord/gifs.ts`) — powered by the OtakuGIFs API
+  (`https://api.otakugifs.xyz/gif?reaction=<name>&format=gif`, no key required).
+  `discord.gif.get` returns a URL; `discord.gif.send` posts the GIF in an embed
+  with a playful, auto-generated caption (e.g. *"Alice punched Bob so hard they
+  flew across the room!"*). Free-form intents ("hit", "give a kiss") are mapped
+  to one of 70 reactions. Optional `GIF_API_BASE_URL` env var overrides the
+  endpoint.
+
+Tools:
+
+| Tool | Risk | Description |
+| --- | --- | --- |
+| `discord.gif.get` | READ | Resolve an intent/reaction to a GIF URL. |
+| `discord.gif.send` | LOW | Post a reaction GIF embed + caption. |
+| `discord.emoji.list` | READ | List server emojis as `<:name:id>` / `<a:name:id>`. |
+| `discord.emoji.get` | READ | Resolve an emoji by name/id to its tag. |
+| `discord.sticker.list` | READ | List server stickers. |
+| `discord.sticker.send` | LOW | Send a server sticker by name/id. |
+
+Custom emojis are usable in any message content via `<:name:id>` (or
+`<a:name:id>` for animated).
+
+---
+
+## 16. System prompt
 
 Assembled at request time in `src/agent/runtime/prompts.ts`
 (`buildSystemPrompt`). Not a static file — it is built from the layers above plus
@@ -473,7 +499,7 @@ channel messages (labeled **UNTRUSTED**, informational only).
 
 ---
 
-## 16. Database schema
+## 17. Database schema
 
 Tables (from `src/database/schema.ts`), all guild-scoped where applicable:
 
@@ -493,7 +519,7 @@ Tables (from `src/database/schema.ts`), all guild-scoped where applicable:
 
 ---
 
-## 17. CLI diagnostics
+## 18. CLI diagnostics
 
 ```bash
 npm run cli -- doctor         # environment + configuration health check

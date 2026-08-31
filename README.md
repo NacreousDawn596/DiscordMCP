@@ -29,6 +29,7 @@ Agent: Done. Created the Development category with 4 channels and the Dev role,
 - **Event automations & scheduled tasks** — welcome messages, reactions, weekly summaries, reaction roles, and semantic condition matching.
 - **Notebook / economy** — per-guild & per-member key/value store for XP, coins, levels, drafts, and tickets; optional passive XP with cooldown; instant `!xp` / `!balance` / `!level` queries.
 - **Buttons, modals & embeds** — send messages with action buttons, interactive forms, and rich embeds.
+- **Reaction GIFs** — anime reaction GIFs (kiss/hug/hit/pat/…) posted in embeds with playful captions; plus server emoji & sticker tools.
 - **Audit trail** — structured run/action history per guild.
 - **CLI diagnostics** — `agent doctor`, `agent status`, `agent guilds`, `agent capabilities`, `agent test`.
 

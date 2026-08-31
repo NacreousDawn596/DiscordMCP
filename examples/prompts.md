@@ -238,7 +238,23 @@ so clicks and submissions can be routed without the LLM re-deciding.
 Reacting adds the role; removing the reaction takes it away. Handled instantly
 (no LLM call).
 
-## 22. Error & edge scenarios
+## 22. Reaction GIFs, emojis & stickers
+
+| You say | What happens |
+| --- | --- |
+| `@Agent kiss @Bob` | Sends a kiss GIF embed + *"You kissed Bob!"* |
+| `@Agent hit @Bob` | Sends a punch/slap GIF + a funny caption. |
+| `@Agent hug me` | Sends a hug GIF. |
+| `@Agent send a wave gif in #general` | Sends a wave GIF to that channel. |
+| `@Agent what emojis does this server have?` | Lists custom emojis as `<:name:id>`. |
+| `@Agent react with the server's hype emoji` | Resolves an emoji to its tag. |
+| `@Agent send the "pog" sticker` | Sends a server sticker. |
+| `@Agent what stickers are available?` | Lists server stickers. |
+
+GIFs come from the OtakuGIFs API (no key). Intents like "hit" are auto-mapped to
+a concrete reaction ("punch"/"slap").
+
+## 23. Error & edge scenarios
 
 | You say / situation | What happens |
 | --- | --- |
@@ -248,7 +264,7 @@ Reacting adds the role; removing the reaction takes it away. Handled instantly
 | Bot lacks `Manage Channels` | It reports the missing permission and doesn't fake success. |
 | A step fails mid-plan | It reports `4/5 steps done` with the exact failure reason. |
 
-## 23. Configuration (admins)
+## 24. Configuration (admins)
 
 | You say |
 | --- |
