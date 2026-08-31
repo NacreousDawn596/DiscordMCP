@@ -199,7 +199,46 @@ these turn into.
 | `@Agent list my scheduled tasks` |
 | `@Agent delete schedule #3` |
 
-## 19. Error & edge scenarios
+## 19. Economy, XP & notebook
+
+| You say | What happens |
+| --- | --- |
+| `@Agent !xp` / `@Agent what is my xp?` | Instant XP read (no LLM call). |
+| `@Agent !balance` / `@Agent my coins` | Instant balance read. |
+| `@Agent !level` | Instant level read. |
+| `@Agent set my coins to 100` | Stores `coins=100` in the notebook. |
+| `@Agent add 50 coins to me` | Atomically increments the member's coins. |
+| `@Agent push "deployed v2" to my activity log` | Appends to a list entry. |
+| `@Agent what's stored under "shop" in this server?` | Reads a guild-scoped entry. |
+| `@Agent list all economy entries` | Queries the notebook by category. |
+
+Passive XP is separate: with `XP_PER_MESSAGE > 0` the bot awards XP on every
+message (throttled by `XP_COOLDOWN_SECONDS`) — no prompt needed.
+
+## 20. Embeds, buttons & modals
+
+| You say |
+| --- |
+| `@Agent send an embed with title "Rules" and description "Be nice" in #info` |
+| `@Agent send a message with a Confirm and a Cancel button in #general` |
+| `@Agent make a button that gives 50 coins when clicked` |
+| `@Agent create an application form with fields for name and reason, posted via a button` |
+| `@Agent bulk delete the last 20 messages in #spam` |
+
+Buttons and forms are stored in the notebook (`button_actions` / `modal_configs`)
+so clicks and submissions can be routed without the LLM re-deciding.
+
+## 21. Reaction roles
+
+| You say |
+| --- |
+| `@Agent create a reaction role: 🟢 gives the Member role on #roles` |
+| `@Agent when someone reacts with 🐛 to a message, add role "Bug Hunter"` |
+
+Reacting adds the role; removing the reaction takes it away. Handled instantly
+(no LLM call).
+
+## 22. Error & edge scenarios
 
 | You say / situation | What happens |
 | --- | --- |
@@ -209,7 +248,7 @@ these turn into.
 | Bot lacks `Manage Channels` | It reports the missing permission and doesn't fake success. |
 | A step fails mid-plan | It reports `4/5 steps done` with the exact failure reason. |
 
-## 20. Configuration (admins)
+## 23. Configuration (admins)
 
 | You say |
 | --- |

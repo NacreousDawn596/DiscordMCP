@@ -81,6 +81,8 @@ to `.env` and edit.
 | `RATE_LIMIT_MAX_CONCURRENT` | `5` | Reserved for concurrency limiting. |
 | `CACHE_TTL_SECONDS` | `300` | Reserved for guild-state cache invalidation. |
 | `CONTEXT_HISTORY_LIMIT` | `50` | Number of recent channel messages (with authors) injected as conversation context when the bot is mentioned/replied to. |
+| `XP_PER_MESSAGE` | `0` | Passive XP awarded per member message (stored in the guild notebook). `0` disables the feature. |
+| `XP_COOLDOWN_SECONDS` | `60` | Minimum seconds between XP awards for the same member (prevents XP farming/spam). |
 
 > **Built-in trusted IDs.** `BUILT_IN_TRUSTED_USER_IDS` (in `src/config/env.ts`)
 > is always merged into the trusted set. A user listed there (currently
@@ -380,7 +382,63 @@ Tools: `discord.schedule.{create,list,update,delete}` (cron expression in the
 
 ---
 
-## 11. System prompt
+## 11. Economy & XP
+
+The bot can award passive XP for activity and answer simple economy queries
+instantly (no LLM call).
+
+- **Passive XP** (`XP_PER_MESSAGE` > 0): every non-bot message in a guild awards
+  `XP_PER_MESSAGE` XP to the author, stored in the notebook under key `xp`,
+  throttled by `XP_COOLDOWN_SECONDS` per member. See
+  [§1.7](#17-trust--limits).
+- **Fast queries** (`src/discord/fastQuery.ts`): `!xp`, `!coins`, `!balance`,
+  `!level`, `!warnings` (and natural-language equivalents) are answered in
+  <10ms from the notebook without invoking the LLM.
+
+## 12. Notebook
+
+A per-guild, per-member key/value store (`guild_notebook` table) used for
+economy balances, XP/levels, drafts, tickets, and any custom state. Entries are
+scoped by `(guild_id, category, key, member_id)`.
+
+Tools:
+
+| Tool | Risk | Description |
+| --- | --- | --- |
+| `discord.notebook.get` | READ | Read one entry (economy balance, XP, draft, setting). |
+| `discord.notebook.set` | LOW | Store/overwrite an entry (number, string, array, JSON). |
+| `discord.notebook.update` | LOW | Atomic update: `increment`, `push`, `merge`, or `set`. |
+| `discord.notebook.query` | READ | Search entries by category / key pattern / member. |
+| `discord.notebook.delete` | LOW | Delete an entry. |
+
+Categories are namespaced (e.g. `economy`, `xp`, `moderation`, `drafts`). XP
+awarded by [§11](#11-economy--xp) lands in the default category under key `xp`.
+
+## 13. Embeds, buttons & modals
+
+- **Embeds** — `discord.embed.send` builds a rich embed (title, description,
+  color by name/hex, fields, footer, image, thumbnail, author, timestamp).
+- **Buttons** — `discord.message.send_with_buttons` posts a message/embed with up
+  to 25 buttons (5 per row). Each button's `action` is stored in the notebook
+  under `button_actions` and executed by the agent when clicked.
+  `discord.button.register_action` re-binds an action to an existing button id.
+- **Modals (forms)** — `discord.form.register` defines a modal (up to 5 fields)
+  and optionally wires it to a trigger button. On submit, field values are
+  collected and processed by the agent per `on_submit_action`.
+- **Bulk delete** — `discord.message.bulk_delete` deletes up to 100 recent
+  messages (optionally filtered to one user).
+
+## 14. Reaction roles
+
+`discord.automation.reaction_role.create` links an emoji + message to a role.
+Reacting adds the role; removing the reaction takes it away. Handled as a
+fast-path in the automation engine (`reaction_add` / `reaction_remove`) — no LLM
+call. Also expressible as a general automation with an action like
+`add role "Member"`.
+
+---
+
+## 15. System prompt
 
 Assembled at request time in `src/agent/runtime/prompts.ts`
 (`buildSystemPrompt`). Not a static file — it is built from the layers above plus
@@ -415,7 +473,7 @@ channel messages (labeled **UNTRUSTED**, informational only).
 
 ---
 
-## 12. Database schema
+## 16. Database schema
 
 Tables (from `src/database/schema.ts`), all guild-scoped where applicable:
 
@@ -431,10 +489,11 @@ Tables (from `src/database/schema.ts`), all guild-scoped where applicable:
 | `agent_runs` | Run history (request, plan, result, duration, success). |
 | `agent_actions` | Per-tool action records (tool, risk, result, timestamp). |
 | `audit_records` | Audit trail of mutations. |
+| `guild_notebook` | Key/value store (economy, XP, drafts, button actions, modal configs) — see [§12](#12-notebook). |
 
 ---
 
-## 13. CLI diagnostics
+## 17. CLI diagnostics
 
 ```bash
 npm run cli -- doctor         # environment + configuration health check

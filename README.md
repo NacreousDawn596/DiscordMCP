@@ -21,12 +21,14 @@ Agent: Done. Created the Development category with 4 channels and the Dev role,
 - **Autonomous planning & execution** — users describe *goals*, not API calls.
 - **LLM-agnostic** — OpenAI, Anthropic, Gemini, OpenRouter, DeepSeek, Ollama, or any OpenAI-compatible endpoint.
 - **Multi-guild isolation** — every query, cache entry, and memory record is namespaced by guild.
-- **MCP-style tool layer** — `discord.guild.*`, `discord.channel.*`, `discord.role.*`, `discord.permission.*`, `discord.message.*`, `discord.member.*`, `discord.moderation.*`, `discord.thread.*`, `discord.forum.*`, `discord.search.*`, `discord.audit.*`, `discord.analytics.*`, `discord.memory.*`, `discord.automation.*`, `discord.schedule.*`, `discord.server.*`, `discord.bulk.*`.
+- **MCP-style tool layer** — `discord.guild.*`, `discord.channel.*`, `discord.role.*`, `discord.permission.*`, `discord.message.*`, `discord.member.*`, `discord.moderation.*`, `discord.thread.*`, `discord.forum.*`, `discord.search.*`, `discord.audit.*`, `discord.analytics.*`, `discord.memory.*`, `discord.automation.*`, `discord.schedule.*`, `discord.server.*`, `discord.bulk.*`, `discord.notebook.*`, `discord.embed.*`.
 - **Permission intelligence** — explains *why* a member can or cannot act.
 - **Safety gates** — risk classification, configurable confirmation levels, dry-run/plan mode, idempotent `ensure_*` operations, authorization independent of the LLM.
 - **Prompt-injection resistance** — all Discord content is treated as untrusted; rules and guild boundaries cannot be overridden.
 - **Guild-scoped memory** — "remember that …", "forget that …", "what do you remember?".
-- **Event automations & scheduled tasks** — welcome messages, reactions, weekly summaries.
+- **Event automations & scheduled tasks** — welcome messages, reactions, weekly summaries, reaction roles, and semantic condition matching.
+- **Notebook / economy** — per-guild & per-member key/value store for XP, coins, levels, drafts, and tickets; optional passive XP with cooldown; instant `!xp` / `!balance` / `!level` queries.
+- **Buttons, modals & embeds** — send messages with action buttons, interactive forms, and rich embeds.
 - **Audit trail** — structured run/action history per guild.
 - **CLI diagnostics** — `agent doctor`, `agent status`, `agent guilds`, `agent capabilities`, `agent test`.
 
