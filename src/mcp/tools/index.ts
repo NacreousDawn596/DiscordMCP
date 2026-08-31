@@ -16,6 +16,8 @@ import { registerScheduleTools } from './schedule.js';
 import { registerServerTools } from './server.js';
 import { registerNotebookTools } from './notebook.js';
 import { registerComponentTools } from './components.js';
+import { registerGifTools } from './gif.js';
+import { registerEmojiTools } from './emoji.js';
 
 let registered = false;
 
@@ -41,5 +43,7 @@ export function registerAllTools(): void {
   registerServerTools();
   registerNotebookTools();
   registerComponentTools();
+  registerGifTools();
+  registerEmojiTools();
 }
 
