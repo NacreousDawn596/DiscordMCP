@@ -1,6 +1,8 @@
 import { EmbedBuilder } from 'discord.js';
 import { registerTool } from '../registry.js';
-import { ok, fail, findChannel } from './helpers.js';
+import type { ToolDescriptor } from '../types.js';
+import type { ExecutionContext } from '../../discord/types.js';
+import { ok, okPosted, fail, findChannel } from './helpers.js';
 import {
   REACTIONS,
   NEKOS_BEST_IMAGE_CATEGORIES,
@@ -8,6 +10,25 @@ import {
   fetchImage,
   buildCaption,
 } from '../../discord/gifs.js';
+
+/** Resolves a target string (mention / raw id / name) to a display name. */
+export function resolveTargetName(ctx: ExecutionContext, target: string): string {
+  const raw = target.trim();
+  const mention = /^<@!?(\d+)>$/.exec(raw);
+  if (mention) {
+    const m = ctx.guild.members.cache.get(mention[1]!);
+    return m ? (m.displayName ?? m.user.username) : mention[1]!;
+  }
+  if (/^\d{15,22}$/.test(raw)) {
+    const m = ctx.guild.members.cache.get(raw);
+    return m ? (m.displayName ?? m.user.username) : raw;
+  }
+  return raw;
+}
+
+function actorName(ctx: ExecutionContext): string {
+  return ctx.member?.displayName ?? ctx.author?.username ?? ctx.userName;
+}
 
 export function registerGifTools(): void {
   registerTool({
@@ -73,11 +94,12 @@ export function registerGifTools(): void {
         return fail((err as Error).message);
       }
 
-      const actor = ctx.member?.displayName ?? ctx.author?.username ?? ctx.userName;
+      const actor = actorName(ctx);
+      const targetName = args.target ? resolveTargetName(ctx, String(args.target)) : undefined;
       const caption =
         args.caption !== undefined
           ? String(args.caption)
-          : buildCaption(result.reaction, actor, args.target ? String(args.target) : undefined);
+          : buildCaption(result.reaction, actor, targetName);
 
       const channel = args.channel
         ? findChannel(ctx.guild, args.channel as string)
@@ -93,7 +115,7 @@ export function registerGifTools(): void {
       };
       const msg = await textChannel.send({ content: caption, embeds: [embed] });
 
-      return ok(`Sent "${result.reaction}" GIF.`, { messageId: msg.id, reaction: result.reaction, url: result.url, source: result.source });
+      return okPosted(`Sent "${result.reaction}" GIF.`, channel.id, { messageId: msg.id, reaction: result.reaction, url: result.url, source: result.source });
     },
   });
 
@@ -138,7 +160,7 @@ export function registerGifTools(): void {
       };
       const msg = await textChannel.send({ embeds: [embed] });
 
-      return ok(`Sent ${img.category} image.`, { messageId: msg.id, category: img.category, url: img.url });
+      return okPosted(`Sent ${img.category} image.`, channel.id, { messageId: msg.id, category: img.category, url: img.url });
     },
   });
 }

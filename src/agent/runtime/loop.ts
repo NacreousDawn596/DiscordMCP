@@ -25,6 +25,11 @@ export interface RunOutcome {
   needsConfirmation: boolean;
   pendingActions: string[];
   runId: string;
+  /**
+   * When true, the agent already posted a visible message to the invocation
+   * channel via a tool, so the caller should NOT send the text response again.
+   */
+  suppressReply?: boolean;
 }
 
 interface PendingEntry {
@@ -108,6 +113,7 @@ export class AgentRuntime {
       };
     }
 
+    const postedChannelIds: string[] = [];
     for (const tc of entry.pending) {
       const args = safeParseArgs(tc.arguments);
       const result = await this.deps.executor(entry.ctx, tc.name, args, {
@@ -115,6 +121,7 @@ export class AgentRuntime {
         runId,
         preApproved: true,
       });
+      if (result.postedChannelId) postedChannelIds.push(result.postedChannelId);
       entry.messages.push({
         role: 'tool',
         content: result.output,
@@ -123,7 +130,7 @@ export class AgentRuntime {
       });
     }
 
-    return this.loop(entry.ctx, entry.messages, entry.mode, runId, Date.now());
+    return this.loop(entry.ctx, entry.messages, entry.mode, runId, Date.now(), postedChannelIds);
   }
 
   hasPending(runId: string): boolean {
@@ -142,6 +149,7 @@ export class AgentRuntime {
     mode: RuntimeMode,
     runId: string,
     startedAt: number,
+    postedChannelIds: string[] = [],
   ): Promise<RunOutcome> {
     const { config, llm } = this.deps;
     const tools = this.selectTools(mode);
@@ -163,6 +171,7 @@ export class AgentRuntime {
           needsConfirmation: false,
           pendingActions: [],
           runId,
+          suppressReply: postedChannelIds.includes(ctx.channelId ?? ''),
         };
       }
 
@@ -182,6 +191,7 @@ export class AgentRuntime {
           runId,
         });
         actions.push({ tool: tc.name, risk: result.risk, success: result.success });
+        if (result.postedChannelId) postedChannelIds.push(result.postedChannelId);
 
         if (result.needsConfirmation) {
           confirmationIndex = j;

@@ -64,6 +64,7 @@ export function buildSystemPrompt(
     `5. Confirmation level is ${guildConfig.confirmationLevel}; destructive actions require user approval.`,
     `6. Enabled capabilities: ${capabilities}.`,
     '7. You may ONLY perform actions the requesting user is themselves permitted to perform. Enforcement is automatic; if a tool is rejected, do not retry it with different arguments to bypass the restriction.',
+    '8. Reply ONCE per user request. If a tool already posted the visible result (a GIF, embed, message, or sticker), do NOT also send a separate text reply — return nothing more.',
     '',
     `# What you CAN do (available tool namespaces)`,
     '- **Interactive components** — send messages or embeds WITH clickable buttons (`discord.message.send_with_buttons`), create forms/modals that open on button click (`discord.form.register`), and rebind button actions (`discord.button.register_action`).',

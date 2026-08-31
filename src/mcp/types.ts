@@ -24,6 +24,8 @@ export interface ToolExecutionResult {
   /** Set when the operation requires user confirmation before running. */
   needsConfirmation?: boolean;
   confirmationDetail?: string;
+  /** Channel id the tool posted a visible message to (if any). */
+  postedChannelId?: string;
   risk: RiskLevel;
   tool: string;
 }

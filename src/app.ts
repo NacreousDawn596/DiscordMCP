@@ -259,7 +259,7 @@ export class AgentApp {
           .setStyle(ButtonStyle.Danger),
       );
       await message.reply({ content, components: [row] }).catch(() => undefined);
-    } else {
+    } else if (!outcome.suppressReply) {
       await message.reply(content).catch(() => undefined);
     }
   }
@@ -485,6 +485,11 @@ export class AgentApp {
       (channel as unknown as import('discord.js').Channel) ?? null,
     );
     const outcome = await this.runtime.run(ctx, action, 'normal');
+
+    if (outcome.suppressReply) {
+      getLogger().info({ guildId, response: outcome.response }, 'automation result (already posted)');
+      return;
+    }
 
     if (channel && 'send' in channel) {
       await (channel as unknown as { send: (content: string) => Promise<unknown> })

@@ -7,6 +7,20 @@ import {
   buildCaption,
   fetchImage,
 } from '../../src/discord/gifs.js';
+import { resolveTargetName } from '../../src/mcp/tools/gif.js';
+import type { ExecutionContext } from '../../src/discord/types.js';
+
+function fakeCtx(members: Record<string, string>): ExecutionContext {
+  const cache = {
+    get: (id: string) => {
+      const name = members[id];
+      return name ? { displayName: name, user: { username: name } } : undefined;
+    },
+  };
+  return {
+    guild: { members: { cache } },
+  } as unknown as ExecutionContext;
+}
 
 describe('gif reactions', () => {
   it('has all 70 reactions', () => {
@@ -69,5 +83,26 @@ describe('nekos.best', () => {
 
   it('rejects unknown image categories before any network call', async () => {
     await expect(fetchImage('dragon')).rejects.toThrow('Unknown image category');
+  });
+});
+
+describe('resolveTargetName', () => {
+  const ctx = fakeCtx({ '750613494172483626': 'Cindy' });
+
+  it('resolves a raw user id to a display name', () => {
+    expect(resolveTargetName(ctx, '750613494172483626')).toBe('Cindy');
+  });
+
+  it('resolves a mention to a display name', () => {
+    expect(resolveTargetName(ctx, '<@750613494172483626>')).toBe('Cindy');
+    expect(resolveTargetName(ctx, '<@!750613494172483626>')).toBe('Cindy');
+  });
+
+  it('leaves plain names untouched', () => {
+    expect(resolveTargetName(ctx, 'Bob')).toBe('Bob');
+  });
+
+  it('falls back to the id when the member is unknown', () => {
+    expect(resolveTargetName(ctx, '111111111111111111')).toBe('111111111111111111');
   });
 });

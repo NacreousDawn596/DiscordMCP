@@ -35,6 +35,11 @@ export interface ToolResult {
   success: boolean;
   output: string;
   data?: unknown;
+  /**
+   * When set, the tool posted a visible message to this Discord channel id.
+   * The runtime uses this to avoid sending a redundant second reply.
+   */
+  postedChannelId?: string;
 }
 
 export const Capabilities = [

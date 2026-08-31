@@ -13,6 +13,11 @@ export function ok(output: string, data?: unknown): ToolResult {
   return { success: true, output, data };
 }
 
+/** ok() plus a marker that the tool posted a visible message to a channel. */
+export function okPosted(output: string, channelId: string, data?: unknown): ToolResult {
+  return { success: true, output, data, postedChannelId: channelId };
+}
+
 export function fail(output: string, data?: unknown): ToolResult {
   return { success: false, output, data };
 }

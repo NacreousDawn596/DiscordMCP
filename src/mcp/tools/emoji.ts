@@ -1,5 +1,5 @@
 import { registerTool } from '../registry.js';
-import { ok, fail, findChannel, toId } from './helpers.js';
+import { ok, okPosted, fail, findChannel, toId } from './helpers.js';
 
 export function registerEmojiTools(): void {
   registerTool({
@@ -86,7 +86,7 @@ export function registerEmojiTools(): void {
       };
       const msg = await textChannel.send({ stickers: [sticker.id] });
 
-      return ok(`Sent sticker "${sticker.name}".`, { messageId: msg.id, stickerId: sticker.id });
+      return okPosted(`Sent sticker "${sticker.name}".`, channel.id, { messageId: msg.id, stickerId: sticker.id });
     },
   });
 }

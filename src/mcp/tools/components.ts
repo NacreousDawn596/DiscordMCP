@@ -14,7 +14,7 @@ import {
   TextInputStyle,
 } from 'discord.js';
 import { registerTool } from '../registry.js';
-import { ok, fail, findChannel } from './helpers.js';
+import { ok, okPosted, fail, findChannel } from './helpers.js';
 import { notebookRepository } from '../../database/repositories/notebookRepository.js';
 
 const BUTTON_STYLE_MAP: Record<string, ButtonStyle> = {
@@ -243,10 +243,14 @@ export function registerComponentTools(): void {
       };
       const msg = await textChannel.send(sendOpts);
 
-      return ok(`Sent message with ${buttonsInput.length} button(s) (Message ID: ${msg.id}).`, {
-        messageId: msg.id,
-        buttonIds: buttonsInput.map((b) => b.custom_id ?? `btn_${b.label}`),
-      });
+      return okPosted(
+        `Sent message with ${buttonsInput.length} button(s) (Message ID: ${msg.id}).`,
+        channel.id,
+        {
+          messageId: msg.id,
+          buttonIds: buttonsInput.map((b) => b.custom_id ?? `btn_${b.label}`),
+        },
+      );
     },
   });
 

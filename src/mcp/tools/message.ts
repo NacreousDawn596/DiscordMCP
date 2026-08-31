@@ -1,6 +1,6 @@
 import type { ToolDescriptor } from '../types.js';
 import { registerTool } from '../registry.js';
-import { ok, fail, findChannel, truncate } from './helpers.js';
+import { ok, okPosted, fail, findChannel, truncate } from './helpers.js';
 import { buildEmbed, type EmbedInput } from '../../discord/embeds.js';
 
 const EMBED_SCHEMA_PROPERTIES = {
@@ -116,7 +116,7 @@ export function registerMessageTools(): void {
         send(o: typeof opts): Promise<{ id: string }>;
       };
       const msg = await textChannel.send(opts);
-      return ok(`Sent embed message (${msg.id}).`, { messageId: msg.id });
+      return okPosted(`Sent embed message (${msg.id}).`, channel.id, { messageId: msg.id });
     },
   });
 
@@ -159,7 +159,7 @@ export function registerMessageTools(): void {
         send(o: typeof opts): Promise<{ id: string }>;
       };
       const msg = await textChannel.send(opts);
-      return ok(`Sent message (${msg.id}).`, { messageId: msg.id });
+      return okPosted(`Sent message (${msg.id}).`, channel.id, { messageId: msg.id });
     },
   });
 
@@ -190,7 +190,7 @@ export function registerMessageTools(): void {
       }
 
       const msg = await ctx.message.reply(opts);
-      return ok(`Replied (${msg.id}).`, { messageId: msg.id });
+      return okPosted(`Replied (${msg.id}).`, ctx.message.channelId, { messageId: msg.id });
     },
   });
 
