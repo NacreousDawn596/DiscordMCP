@@ -21,7 +21,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",
-    "better-sqlite3": "^11.8.1",
+    "better-sqlite3": "^13.0.3",
     "croner": "^8.1.2",
     "discord.js": "^14.16.3",
     "dotenv": "^16.4.7",
